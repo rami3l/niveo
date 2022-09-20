@@ -9,3 +9,7 @@ authors = ["Rami3L <rami3l@outlook.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ariadne = "0.1.5"
+chumsky = "0.8.0"
+derive_more = "0.99.17"
+paste = "1.0.9"
