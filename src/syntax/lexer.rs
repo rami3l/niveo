@@ -1,11 +1,10 @@
 use chumsky::prelude::*;
 use derive_more::Display;
 
-use super::Span;
+use super::Spanned;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Display)]
-enum Token {
-    #[default]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Display)]
+pub enum Token {
     #[display(fmt = "EOF")]
     Eof,
 
@@ -119,74 +118,76 @@ enum Token {
     Atom(String),
 }
 
-fn lexer() -> impl Parser<char, Vec<(Token, Span)>, Error = Simple<char>> {
-    // Based on <https://github.com/zesterer/chumsky/blob/a0a67e47fe6341c2f6637dac3c09c38080803070/examples/nano_rust.rs>.
+impl Token {
+    pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
+        // Based on <https://github.com/zesterer/chumsky/blob/a0a67e47fe6341c2f6637dac3c09c38080803070/examples/nano_rust.rs>.
 
-    let num = text::int(10)
-        .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
-        .collect()
-        .map(Token::Num);
+        let num = text::int(10)
+            .chain::<char, _, _>(just('.').chain(text::digits(10)).or_not().flatten())
+            .collect()
+            .map(Token::Num);
 
-    let str_ = just('"')
-        .ignore_then(filter(|&c| c != '"').repeated())
-        .then_ignore(just('"'))
-        .collect()
-        .map(Token::Str);
+        let str_ = just('"')
+            .ignore_then(filter(|&c| c != '"').repeated())
+            .then_ignore(just('"'))
+            .collect()
+            .map(Token::Str);
 
-    let op = choice((
-        just('(').to(Token::LParen),
-        just(')').to(Token::RParen),
-        just('[').to(Token::LBrack),
-        just(']').to(Token::RBrack),
-        just('{').to(Token::LBrace),
-        just('}').to(Token::RBrace),
-        just(',').to(Token::Comma),
-        just('.').to(Token::Dot),
-        just(';').to(Token::Semi),
-        just(':').to(Token::Colon),
-        just('+').to(Token::Plus),
-        just('-').to(Token::Minus),
-        just("**").to(Token::Star2),
-        just('*').to(Token::Star),
-        just('/').to(Token::Slash),
-        just("<=").to(Token::LeEq),
-        just('<').to(Token::Le),
-        just("==").to(Token::Eq2),
-        just('=').to(Token::Eq),
-        just(">=").to(Token::GtEq),
-        just('>').to(Token::Gt),
-        just("!=").to(Token::BangEq),
-        just('!').to(Token::Bang),
-        just("&&").to(Token::Amp2),
-        just("||").to(Token::Pipe2),
-    ));
+        let op = choice((
+            just('(').to(Token::LParen),
+            just(')').to(Token::RParen),
+            just('[').to(Token::LBrack),
+            just(']').to(Token::RBrack),
+            just('{').to(Token::LBrace),
+            just('}').to(Token::RBrace),
+            just(',').to(Token::Comma),
+            just('.').to(Token::Dot),
+            just(';').to(Token::Semi),
+            just(':').to(Token::Colon),
+            just('+').to(Token::Plus),
+            just('-').to(Token::Minus),
+            just("**").to(Token::Star2),
+            just('*').to(Token::Star),
+            just('/').to(Token::Slash),
+            just("<=").to(Token::LeEq),
+            just('<').to(Token::Le),
+            just("==").to(Token::Eq2),
+            just('=').to(Token::Eq),
+            just(">=").to(Token::GtEq),
+            just('>').to(Token::Gt),
+            just("!=").to(Token::BangEq),
+            just('!').to(Token::Bang),
+            just("&&").to(Token::Amp2),
+            just("||").to(Token::Pipe2),
+        ));
 
-    let ident = text::ident().map(|s: String| match s.as_str() {
-        "true" => Token::True,
-        "false" => Token::False,
-        "null" => Token::Null,
-        "struct" => Token::Struct,
-        "if" => Token::If,
-        "else" => Token::Else,
-        "let" => Token::Let,
-        "fun" => Token::Fun,
-        _ => Token::Ident(s),
-    });
+        let ident = text::ident().map(|s: String| match s.as_str() {
+            "true" => Token::True,
+            "false" => Token::False,
+            "null" => Token::Null,
+            "struct" => Token::Struct,
+            "if" => Token::If,
+            "else" => Token::Else,
+            "let" => Token::Let,
+            "fun" => Token::Fun,
+            _ => Token::Ident(s),
+        });
 
-    let atom = just('\'').ignore_then(text::ident().map(Token::Atom));
+        let atom = just('\'').ignore_then(text::ident().map(Token::Atom));
 
-    let comment = choice((
-        just("//").then(take_until(text::newline())).ignored(),
-        just("/*").then(take_until(just("*/"))).ignored(),
-    ))
-    .padded();
+        let comment = choice((
+            just("//").then(take_until(text::newline())).ignored(),
+            just("/*").then(take_until(just("*/"))).ignored(),
+        ))
+        .padded();
 
-    choice((num, str_, atom, op, ident))
-        .recover_with(skip_then_retry_until([]))
-        .map_with_span(|tk, span| (tk, span))
-        .padded_by(comment.repeated())
-        .padded()
-        .repeated()
+        choice((num, str_, atom, op, ident))
+            .recover_with(skip_then_retry_until([]))
+            .map_with_span(Spanned)
+            .padded_by(comment.repeated())
+            .padded()
+            .repeated()
+    }
 }
 
 #[cfg(test)]
@@ -199,9 +200,9 @@ mod tests {
     fn assert_lex(expected: &str, src: &str) {
         assert_eq!(
             Ok(expected),
-            lexer()
+            Token::lexer()
                 .parse(src)
-                .map(|tks| tks.iter().map(|(tk, _)| tk).join(" "))
+                .map(|tks| tks.iter().map(|Spanned(tk, _)| tk).join(" "))
                 .as_deref(),
         );
     }
