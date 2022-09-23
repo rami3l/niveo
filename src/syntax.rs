@@ -15,6 +15,15 @@ pub type Span = Range<usize>;
 #[display(fmt = "{_0}")]
 pub struct Spanned<T>(T, Span);
 
+impl<T> Spanned<T> {
+    pub fn map<U, F>(self, f: F) -> Spanned<U>
+    where
+        F: FnOnce(T) -> U,
+    {
+        Spanned(f(self.0), self.1)
+    }
+}
+
 impl<T: Clone> chumsky::Span for Spanned<T> {
     type Context = T;
     type Offset = usize;

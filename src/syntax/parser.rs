@@ -18,46 +18,68 @@ pub fn parser() -> impl Parser<Token, Spanned<Prog>, Error = Simple<Token>> {
         Token::Str(s) => Lit::Str(s),
         Token::Atom(s) => Lit::Atom(s),
     }
-    .map_with_span(Spanned);
+    .map_with_span(|it, span| Spanned(Expr::Lit(it), span))
+    // ! The use of `.boxed()` is explained at <https://github.com/zesterer/chumsky/issues/35#issuecomment-981473859>.
+    .boxed();
 
     let mut paren = Recursive::declare();
     let mut expr = Recursive::declare();
 
     paren.define(
-        just(Token::LParen)
-            .ignore_then(expr.clone())
-            .then_ignore(just(Token::RParen)),
+        expr.clone()
+            .delimited_by(just(Token::LParen), just(Token::RParen)),
     );
     expr.define(recursive(|expr| {
+        let args = expr
+            .clone()
+            .separated_by(just(Token::Comma))
+            .allow_trailing()
+            .boxed();
         #[allow(clippy::similar_names)]
-        let list = just(Token::LBrack)
-            .ignore_then(
-                expr.clone()
-                    .separated_by(just(Token::Comma))
-                    .allow_trailing(),
-            )
-            .then_ignore(just(Token::RBrack))
-            .map_with_span(|exprs, span| Expr::List(exprs.into()).pipe(|it| Spanned(it, span)));
-        let struct_kv = choice((
-            select! { Token::Str(s) => s, Token::Ident(s) => s }
-                .then_ignore(just(Token::Colon))
-                .then(expr),
-            select! { i@Token::Ident(s) => (s.clone(), Expr::Var(i)) }
-                .map_with_span(|(k, v), span| (k, Spanned(v, span))),
-        ));
-        let struct_ = just([Token::Struct, Token::LBrace])
-            .ignore_then(struct_kv.separated_by(just(Token::Comma)).allow_trailing())
-            .then_ignore(just(Token::RBrace))
-            .map_with_span(|kvs, span| Expr::Struct(kvs.into()).pipe(|it| Spanned(it, span)));
-        let if_else = todo!();
-        let lambda = just([Token::Fun, Token::LParen])
+        let list = args
+            .delimited_by(just(Token::LBrack), just(Token::RBrack))
+            .map_with_span(|exprs, span| Expr::List(exprs.into()).pipe(|it| Spanned(it, span)))
+            .boxed();
+        let struct_ = {
+            let struct_kv = choice((
+                select! { Token::Str(s) => s, Token::Ident(s) => s }
+                    .then_ignore(just(Token::Colon))
+                    .then(expr),
+                select! { i@Token::Ident(s) => (s.clone(), Expr::Var(i)) }
+                    .map_with_span(|(k, v), span| (k, Spanned(v, span))),
+            ));
+            just(Token::Struct)
+                .ignore_then(
+                    struct_kv
+                        .separated_by(just(Token::Comma))
+                        .allow_trailing()
+                        .delimited_by(just(Token::LBrace), just(Token::RBrace)),
+                )
+                .map_with_span(|kvs, span| Expr::Struct(kvs.into()).pipe(|it| Spanned(it, span)))
+                .boxed()
+        };
+        let if_else = just(Token::If)
+            .ignore_then(paren)
+            .then(expr)
+            .then_ignore(just(Token::Else))
+            .then(expr)
+            .map_with_span(|((cond, then_), else_), span| {
+                Expr::IfElse {
+                    cond: Box::new(cond),
+                    then_: Box::new(then_),
+                    else_: Box::new(else_),
+                }
+                .pipe(|it| Spanned(it, span))
+            })
+            .boxed();
+        let lambda = just(Token::Fun)
             .ignore_then(
                 // TODO: Make the following `select!` call a new macro.
                 select! {Token::Ident(s) => s}
                     .separated_by(just(Token::Comma))
-                    .allow_trailing(),
+                    .allow_trailing()
+                    .delimited_by(just(Token::LParen), just(Token::RParen)),
             )
-            .then_ignore(just(Token::RParen))
             .then(block.clone())
             .map_with_span(|(params, body), span| {
                 Expr::Lambda {
@@ -65,11 +87,75 @@ pub fn parser() -> impl Parser<Token, Spanned<Prog>, Error = Simple<Token>> {
                     body,
                 }
                 .pipe(|it| Spanned(it, span))
-            });
+            })
+            .boxed();
         let prim = choice((list, struct_, if_else, lambda, lit));
-        let call = todo!();
-        let unary = todo!();
-        let expon = todo!();
+        let call = prim
+            .then(args.delimited_by(just(Token::LParen), just(Token::RParen)))
+            .map_with_span(|(callee, args), span| {
+                Expr::Call {
+                    callee: Box::new(callee),
+                    args: args.into(),
+                }
+                .pipe(|it| Spanned(it, span))
+            })
+            .boxed();
+        let index = prim
+            .then(expr.delimited_by(just(Token::LBrack), just(Token::RBrack)))
+            .map_with_span(|(this, idx), span| {
+                Expr::Index {
+                    this: Box::new(this),
+                    idx: Box::new(idx),
+                }
+                .pipe(|it| Spanned(it, span))
+            })
+            .boxed();
+        let get = prim
+            .then_ignore(just(Token::Dot))
+            .then(select! {Token::Ident(s) => s}.map_with_span(Spanned))
+            .map_with_span(|(this, ident), span| {
+                Expr::Index {
+                    this: Box::new(this),
+                    idx: Box::new(ident.map(|it| Expr::Lit(Lit::Str(it)))),
+                }
+                .pipe(|it| Spanned(it, span))
+            })
+            .boxed();
+        let unary = recursive(|unary| {
+            let signed = one_of([Token::Plus, Token::Minus, Token::Bang])
+                .then(unary)
+                .map_with_span(|(op, rhs), span| {
+                    Expr::Unary {
+                        op,
+                        rhs: Box::new(rhs),
+                    }
+                    .pipe(|it| Spanned(it, span))
+                });
+            choice((signed, call, get, index))
+        })
+        .boxed();
+        let pow = {
+            let op = Token::Star2;
+            unary
+                .separated_by(just(op))
+                .at_least(1)
+                .map_with_span(|exprs, span| {
+                    exprs
+                        .into_iter()
+                        .rev()
+                        .reduce(|rhs, lhs| {
+                            let span = lhs.1.start..rhs.1.end;
+                            Expr::Binary {
+                                lhs: Box::new(lhs),
+                                op,
+                                rhs: Box::new(rhs),
+                            }
+                            .pipe(|it| Spanned(it, span))
+                        })
+                        .unwrap()
+                })
+        }
+        .boxed();
         let factor = todo!();
         let term = todo!();
         let comp = todo!();
@@ -87,18 +173,18 @@ pub fn parser() -> impl Parser<Token, Spanned<Prog>, Error = Simple<Token>> {
             .then_ignore(just(Token::Semi))
             .map_with_span(|(ident, expr), span| {
                 Decl::Let { ident, expr }.pipe(|it| Spanned(it, span))
-            });
+            })
+            .boxed();
 
         let fun = just(Token::Fun)
             .ignore_then(select! {Token::Ident(s) => s})
-            .then_ignore(just(Token::LParen))
             .then(
                 // TODO: Make the following `select!` call a new macro.
                 select! {Token::Ident(s) => s}
                     .separated_by(just(Token::Comma))
-                    .allow_trailing(),
+                    .allow_trailing()
+                    .delimited_by(just(Token::LParen), just(Token::RParen)),
             )
-            .then_ignore(just(Token::RParen))
             .then(block.clone())
             .map_with_span(|((ident, params), body): ((_, Vec<_>), _), span| {
                 Decl::Fun {
@@ -107,7 +193,8 @@ pub fn parser() -> impl Parser<Token, Spanned<Prog>, Error = Simple<Token>> {
                     body,
                 }
                 .pipe(|it| Spanned(it, span))
-            });
+            })
+            .boxed();
 
         choice((let_, fun))
     });
