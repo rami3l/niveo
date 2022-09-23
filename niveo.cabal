@@ -1,0 +1,200 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.35.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           niveo
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/rami3l/niveo#readme>
+homepage:       https://github.com/rami3l/niveo#readme
+bug-reports:    https://github.com/rami3l/niveo/issues
+author:         rami3l
+maintainer:     rami3l@outlook.com
+copyright:      2022 rami3l
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/rami3l/niveo
+
+library
+  exposed-modules:
+      Niveo
+      Niveo.Parser
+  other-modules:
+      Paths_niveo
+  hs-source-dirs:
+      src
+  default-extensions:
+      AllowAmbiguousTypes
+      BinaryLiterals
+      BlockArguments
+      ConstraintKinds
+      DataKinds
+      DeriveGeneric
+      DuplicateRecordFields
+      ExtendedDefaultRules
+      FlexibleContexts
+      FlexibleInstances
+      FunctionalDependencies
+      GADTs
+      MultiParamTypeClasses
+      MultiWayIf
+      NamedFieldPuns
+      NoFieldSelectors
+      NoImplicitPrelude
+      NoStarIsType
+      OverloadedLabels
+      OverloadedRecordDot
+      OverloadedStrings
+      PatternSynonyms
+      PolyKinds
+      QuasiQuotes
+      RankNTypes
+      StandaloneDeriving
+      StandaloneKindSignatures
+      TemplateHaskell
+      TupleSections
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      UndecidableInstances
+  ghc-options: -Wall
+  build-depends:
+      base >=4.7 && <5
+    , bimap
+    , diagnose
+    , extra
+    , megaparsec
+    , optics
+    , raw-strings-qq
+    , relude
+    , string-interpolate
+    , witch
+  default-language: GHC2021
+
+executable niveo-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_niveo
+  hs-source-dirs:
+      app
+  default-extensions:
+      AllowAmbiguousTypes
+      BinaryLiterals
+      BlockArguments
+      ConstraintKinds
+      DataKinds
+      DeriveGeneric
+      DuplicateRecordFields
+      ExtendedDefaultRules
+      FlexibleContexts
+      FlexibleInstances
+      FunctionalDependencies
+      GADTs
+      MultiParamTypeClasses
+      MultiWayIf
+      NamedFieldPuns
+      NoFieldSelectors
+      NoImplicitPrelude
+      NoStarIsType
+      OverloadedLabels
+      OverloadedRecordDot
+      OverloadedStrings
+      PatternSynonyms
+      PolyKinds
+      QuasiQuotes
+      RankNTypes
+      StandaloneDeriving
+      StandaloneKindSignatures
+      TemplateHaskell
+      TupleSections
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      UndecidableInstances
+  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , bimap
+    , diagnose
+    , extra
+    , megaparsec
+    , niveo
+    , optics
+    , raw-strings-qq
+    , relude
+    , string-interpolate
+    , witch
+  default-language: GHC2021
+
+test-suite niveo-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Tests.Common
+      Tests.Parser
+      Paths_niveo
+  hs-source-dirs:
+      test
+  default-extensions:
+      AllowAmbiguousTypes
+      BinaryLiterals
+      BlockArguments
+      ConstraintKinds
+      DataKinds
+      DeriveGeneric
+      DuplicateRecordFields
+      ExtendedDefaultRules
+      FlexibleContexts
+      FlexibleInstances
+      FunctionalDependencies
+      GADTs
+      MultiParamTypeClasses
+      MultiWayIf
+      NamedFieldPuns
+      NoFieldSelectors
+      NoImplicitPrelude
+      NoStarIsType
+      OverloadedLabels
+      OverloadedRecordDot
+      OverloadedStrings
+      PatternSynonyms
+      PolyKinds
+      QuasiQuotes
+      RankNTypes
+      StandaloneDeriving
+      StandaloneKindSignatures
+      TemplateHaskell
+      TupleSections
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      UndecidableInstances
+  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
+  build-tool-depends:
+      tasty-discover:tasty-discover
+  build-depends:
+      base >=4.7 && <5
+    , bimap
+    , diagnose
+    , extra
+    , megaparsec
+    , niveo
+    , optics
+    , raw-strings-qq
+    , regex-tdfa
+    , relude
+    , string-interpolate
+    , tasty
+    , tasty-hunit
+    , tasty-quickcheck
+    , tasty-smallcheck
+    , witch
+  default-language: GHC2021

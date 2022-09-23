@@ -1,0 +1,8 @@
+cradle:
+  stack:
+    - path: "./app"
+      component: "niveo:exe:niveo-exe"
+    - path: "./src"
+      component: "niveo:lib"
+    - path: "./test"
+      component: "niveo:test:niveo-test"

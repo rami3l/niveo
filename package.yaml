@@ -1,0 +1,105 @@
+name: niveo
+version: 0.1.0.0
+github: "rami3l/niveo"
+license: BSD3
+author: "rami3l"
+maintainer: "rami3l@outlook.com"
+copyright: "2022 rami3l"
+
+extra-source-files:
+  - README.md
+  - ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description: Please see the README on GitHub at <https://github.com/rami3l/niveo#readme>
+
+language: GHC2021
+
+default-extensions:
+  - AllowAmbiguousTypes
+  - BinaryLiterals
+  - BlockArguments
+  - ConstraintKinds
+  - DataKinds
+  - DeriveGeneric
+  - DuplicateRecordFields
+  - ExtendedDefaultRules
+  - FlexibleContexts
+  - FlexibleInstances
+  - FunctionalDependencies
+  - GADTs
+  - MultiParamTypeClasses
+  - MultiWayIf
+  - NamedFieldPuns
+  - NoFieldSelectors
+  - NoImplicitPrelude # https://github.com/commercialhaskell/stack/issues/5077
+  - NoStarIsType
+  - OverloadedLabels
+  - OverloadedRecordDot
+  # - OverloadedRecordUpdate
+  - OverloadedStrings
+  - PatternSynonyms
+  - PolyKinds
+  - QuasiQuotes
+  - RankNTypes
+  - StandaloneDeriving
+  - StandaloneKindSignatures
+  - TemplateHaskell
+  - TupleSections
+  - TypeApplications
+  - TypeFamilies
+  - TypeOperators
+  - UndecidableInstances
+
+dependencies:
+  - base >= 4.7 && < 5
+  - bimap
+  - diagnose
+  - extra
+  - megaparsec
+  - optics
+  - raw-strings-qq
+  - relude
+  - string-interpolate
+  - witch
+
+ghc-options:
+  - -Wall
+
+library:
+  source-dirs: src
+
+executables:
+  niveo-exe:
+    main: Main.hs
+    source-dirs: app
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - niveo
+
+tests:
+  niveo-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - niveo
+      - regex-tdfa
+      - tasty
+      - tasty-hunit
+      - tasty-quickcheck
+      - tasty-smallcheck
+    build-tools:
+      - tasty-discover:tasty-discover

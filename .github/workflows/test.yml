@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: haskell/actions/setup@v2
+        with:
+          # ghc-version: "9.0.2" # Exact version of ghc to use
+          # cabal-version: 'latest'. Omitted, but defaults to 'latest'
+          enable-stack: true
+          stack-version: "latest"
+          stack-no-global: true
+
+      - name: Cache Stack downloads
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-stack-modules
+        with:
+          path: /home/runner/.stack/
+          key: ${{ hashFiles('**/stack.yaml.lock') }}
+
+      - name: Test native build
+        run: stack build
+
+      - name: Run simple tests
+        run: stack test
