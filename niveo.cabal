@@ -44,6 +44,7 @@ library
       FlexibleInstances
       FunctionalDependencies
       GADTs
+      LambdaCase
       MultiParamTypeClasses
       MultiWayIf
       NamedFieldPuns
@@ -98,6 +99,7 @@ executable niveo-exe
       FlexibleInstances
       FunctionalDependencies
       GADTs
+      LambdaCase
       MultiParamTypeClasses
       MultiWayIf
       NamedFieldPuns
@@ -156,6 +158,7 @@ test-suite niveo-test
       FlexibleInstances
       FunctionalDependencies
       GADTs
+      LambdaCase
       MultiParamTypeClasses
       MultiWayIf
       NamedFieldPuns

@@ -2,9 +2,11 @@ module Niveo.Parser
   ( Expr,
     Parser,
     ParserErrorBundle,
-    Decl,
     Token,
     TokenType,
+    expression,
+    primary,
+    program,
   )
 where
 
@@ -14,7 +16,6 @@ import Data.Char (isDigit, toLower)
 import Data.Map.Strict qualified as Map
 import Data.String.Interpolate
 import Data.Text qualified as Text
-import Optics (both, toListOf, traversed, (%))
 import Relude
 import Text.Megaparsec
   ( MonadParsec (eof, hidden, label, lookAhead, notFollowedBy, takeWhileP, try, withRecovery),
@@ -194,10 +195,10 @@ ident = toTokenParser TIdent ident' <?> "identifier"
         else pure str
 atom = toTokenParser TAtom atom' <?> "atom"
   where
-    atom' = lexeme . try $ toText <$> (char ':' *> identStr)
+    atom' = lexeme . try $ toText <$> (char '\'' *> identStr)
 
 identStr :: Parser String
-identStr = (:) <$> letterChar <*> (hidden . many) (alphaNumChar <|> single '_')
+identStr = (:) <$> (letterChar <|> single '_') <*> (hidden . many) (alphaNumChar <|> single '_')
 
 strLit :: Parser Token
 strLit = toTokenParser TStr $ toText <$> (doubleQuote *> L.charLiteral `manyTill` doubleQuote)
@@ -225,7 +226,7 @@ data Lit
 instance Prelude.Show Lit where
   show LNull = "null"
   show (LBool b) = toLower <$> show b
-  show (LNum n) = show n
+  show (LNum n) = toString n
   show (LStr s) = show s
   show (LAtom s) = [i|'#{s}|]
 
@@ -235,21 +236,16 @@ data Expr
   | ECall {callee :: Expr, args :: [Expr], end :: !Token}
   | EIndex {from, idx :: Expr, end :: !Token}
   | EParen Expr
-  | EBlock {decls :: [Decl], val :: Expr}
   | EList [Expr]
   | EIfElse {cond, then', else' :: Expr}
+  | ELet {ident :: Token, init, val :: Expr}
   | ELambda {params :: ![Token], body :: Expr}
   | EStruct [(Expr, Expr)]
   | ELit !Lit
   | EVar !Token
   | EError
 
-data Decl
-  = DLet {ident :: Token, val :: Expr}
-  | DFun {ident :: Token, params :: ![Token], body :: Expr}
-  | DError
-
-data Prog = Prog {decls :: [Decl], val :: Expr}
+newtype Prog = Prog {val :: Expr}
 
 instance Prelude.Show Expr where
   show (EUnary op' rhs) = [i|(#{op'} #{rhs})|]
@@ -257,27 +253,17 @@ instance Prelude.Show Expr where
   show (ECall callee args _) = show $ Showable callee : Showable `fmap` args
   show (EIndex this idx _) = [i|(@ #{this} #{idx})|]
   show (EParen inner) = show inner
-  show (EBlock decls val) = show $ Showable @Text "begin" : Showable `fmap` decls <> [Showable val]
-  show (EList exprs) = show $ Showable @Text "list" : Showable `fmap` exprs
+  show (EList exprs) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
   show (EIfElse cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
-  show (ELambda params body) = [i|(lambda #{params'} #{body})|] where params' = Showable . (.lexeme) <$> params
-  show (EStruct kvs) =
-    show $
-      Showable @Text "struct"
-        -- https://stackoverflow.com/a/14370010
-        : Showable
-        `fmap` toListOf (traversed % both) kvs
+  show (ELet ident' init' val) = [i|(let ((#{ident'} #{init'})) #{val})|]
+  show (ELambda params body) = [i|(lambda #{params'} #{body})|] where params' = show @String $ Showable . ToString' . (.lexeme) <$> params
+  show (EStruct kvs) = [i|(struct #{kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
   show (EVar var) = var.lexeme & toString
   show EError = "<?>"
 
-instance Prelude.Show Decl where
-  show (DLet ident' val) = [i|(let #{ident'} #{val})|]
-  show (DFun ident' params body) = [i|(fun #{ident'} #{params'} #{body})|] where params' = Showable . (.lexeme) <$> params
-  show DError = "(?)"
-
 instance Prelude.Show Prog where
-  show (Prog decls val) = show $ Showable `fmap` decls <> [Showable val]
+  show (Prog val) = show val
 
 data Showable = forall a. Show a => Showable a
 
@@ -286,12 +272,15 @@ instance Prelude.Show Showable where
   showList [] = const "'()"
   showList as = const [i|(#{Prelude.unwords $ fmap show as})|]
 
+data ToString' = forall a. ToString a => ToString' a
+
+instance Prelude.Show ToString' where
+  show (ToString' a) = toString a
+
 -- Expressions:
 
 block :: Parser Expr
-block = uncurry EBlock <$> block'
-  where
-    block' = declaration `manyTill_` expression & between (op TLBrace) (op TRBrace) <?> "block"
+block = expression & between (op TLBrace) (op TRBrace) <&> EParen <?> "block"
 
 paramList :: Parser [Token]
 paramList = between (op TLParen) (op TRParen) (ident `sepBy` hidden (op TComma)) <?> "parameters"
@@ -306,13 +295,18 @@ primary =
       strLit <&> ELit . LStr . (.lexeme),
       EParen <$> between (op TLParen) (op TRParen) expression,
       block,
+      -- TODO: Remove EBlock and add ELet in the reference manual.
+      ELet
+        <$> (kw TLet *> ident)
+        <*> (op TEq *> expression)
+        <*> (op TSemi *> expression),
       EList <$> between (op TLBrack) (op TRBrack) (expression `sepEndBy` op TComma),
-      EStruct <$> between (op TLBrace) (op TRBrace) (structKV `sepEndBy` op TComma),
+      EStruct <$> between (kw TStruct *> op TLBrace) (op TRBrace) (structKV `sepEndBy` op TComma),
       EIfElse
         <$> (kw TIf *> between (op TLParen) (op TRParen) (expression <?> "condition"))
         <*> (expression <?> "then branch")
         <*> (kw TElse *> (expression <?> "else branch")),
-      ELambda <$> (kw TFun *> paramList) <*> block,
+      ELambda <$> (kw TFun *> paramList) <*> (block <?> "function body"),
       atom <&> ELit . LAtom . (.lexeme),
       EVar <$> ident
     ]
@@ -338,11 +332,11 @@ call = label "call expression" $
   toInfixLParser primary \c -> choice $ [goArgs, goGet, goIndex] <&> ($ c)
   where
     goArgs c = ECall c <$> (op TLParen *> args) <*> op TRParen
-      where
-        args = expression `sepBy` hidden (op TComma) <?> "arguments"
-    goGet c = EIndex c <$> (op TLBrack *> field) <*> op TRBrack
-      where
-        field = ident <&> ELit . LStr . (.lexeme) <?> "field"
+    args = expression `sepBy` hidden (op TComma) <?> "arguments"
+    goGet c = do
+      rawField <- op TDot *> ident <?> "field"
+      let field = ELit . LStr $ rawField.lexeme
+      pure $ EIndex c field rawField
     goIndex c = EIndex c <$> (op TLBrack *> (expression <?> "index")) <*> op TRBrack
 
 unary, pow, factor, term, comparison, equality, logicAnd, logicOr :: Parser Expr
@@ -354,7 +348,7 @@ unary =
     <|> call
 pow = do
   lhs <- unary <?> "operand"
-  lhs `option` (EBinary lhs <$> op TStar2 <*> pow)
+  lhs `option` hidden (EBinary lhs <$> op TStar2 <*> pow)
 factor = toInfixLParser pow \c ->
   EBinary c <$> (op TSlash <|> op TStar) <*> pow
 term = toInfixLParser factor \c ->
@@ -376,28 +370,6 @@ expression = synced logicOr <?> "expression"
     synced = withRecovery $ (*> (sync end $> EError)) . registerParseError
     end = choice $ op TSemi : (lookAhead . kw <$> [TTrue, TFalse, TNull, TStruct, TIf, TFun])
 
--- Declarations:
-
-letDecl, funDecl :: Parser Decl
-letDecl =
-  DLet
-    <$> ident
-    <*> (op TEq *> (expression <?> "value"))
-    & between (kw TLet) (op TSemi)
-    <?> "variable declaration"
-funDecl =
-  DFun
-    <$> (kw TFun *> (ident <?> "function name"))
-    <*> paramList
-    <*> (block <?> "function body")
-    <?> "function declaration"
-
-declaration :: Parser Decl
-declaration = synced (choice [letDecl, funDecl] <?> "declaration")
-  where
-    synced = withRecovery $ (*> (sync end $> DError)) . registerParseError
-    end = choice $ op TSemi : (lookAhead . kw <$> [TLet, TFun])
-
 -- | Syncs the parser towards the given Token pattern parser.
 --
 -- For example, in a C statement,
@@ -409,4 +381,4 @@ sync :: Parser Token -> Parser ()
 sync = void . (anySingle `manyTill`)
 
 program :: Parser Prog
-program = uncurry Prog <$> declaration `manyTill_` expression <* eof <?> "program"
+program = expression <* eof <&> Prog <?> "program"
