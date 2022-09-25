@@ -6,7 +6,7 @@ import Relude
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (Assertion, testCase, (@?=))
 import Tests.Common (assertRegexMatch)
-import Text.Megaparsec (errorBundlePretty, parse)
+import Text.Megaparsec (MonadParsec (eof), errorBundlePretty, parse)
 import Text.RawString.QQ
 
 parse' :: Show a => Parser a -> Text -> Either Text Text
@@ -23,15 +23,15 @@ assertError (Left got) pattern' = got `assertRegexMatch` pattern'
 -- Expressions:
 
 assertExpr, assertExprError :: Text -> Text -> Assertion
-assertExpr = assert' . parse' expression
-assertExprError = assertError . parse' expression
+assertExpr = assert' . parse' (expression <* eof)
+assertExprError = assertError . parse' (expression <* eof)
 
 test_arithmetic :: TestTree
 test_arithmetic =
   testGroup
     "Should parse arithmetic expressions"
     [ testCase "with precedence" $
-        "1+2 / 3- 4 *-5.678" `assertExpr` "(- (+ 1 (/ 2 3)) (* 4 (- 5.678)))",
+        "1+2 / 3- 4 *-5.6 ** 7 ** 8" `assertExpr` "(- (+ 1 (/ 2 3)) (* 4 (** (- 5.6) (** 7 8))))",
       testCase "with missing unary operand" $
         "-" `assertExprError` "expecting operand$",
       testCase "with missing binary operand" $
@@ -42,9 +42,24 @@ test_arithmetic =
       testCase "with paren mismatch" $
         "-(-1+2 / 3- 4 *5+ (6/ 7)" `assertExprError` [r|expecting '\)'$|],
       testCase "with binary misused as unary" $
-        "*1" `assertExprError` "expecting expression$",
-      testCase "with assignments" $
-        "a = b = c = 3" `assertExpr` "(assign! a (assign! b (assign! c 3)))"
+        "*1" `assertExprError` "expecting expression$"
+    ]
+
+test_struct :: TestTree
+test_struct =
+  testGroup
+    "Should parse struct expressions"
+    [ testCase "without trailing comma" $
+        [r|struct{"foo" + "bar": 4.2, "ba z": true && false}|]
+          `assertExpr` [r|(struct (((+ "foo" "bar") 4.2) ("ba z" (&& true false))))|],
+      testCase "with trailing comma" $
+        [__i|
+          struct{
+            foo: foo,
+            baz: [1, 2.3, "4.56"], // <- Here!
+          }
+        |]
+          `assertExpr` [r|(struct ((foo foo) (baz (list 1 2.3 "4.56"))))|]
     ]
 
 test_boolean :: TestTree
@@ -57,31 +72,30 @@ test_boolean =
       testCase "with `>=`, misused as unary" $
         ">= 1+2 == 3"
           `assertExprError` "expecting expression$",
-      testCase "with `and`, `or` and `!`" $
-        "foo == nil or !!bar and a != (b = c = 3)"
-          `assertExpr` "(or (== foo nil) (and (! (! bar)) (!= a (assign! b (assign! c 3)))))"
+      testCase "with `&&`, `||` and `!`" $
+        "foo == null || !!bar && a != (b == 3)"
+          `assertExpr` "(|| (== foo null) (&& (! (! bar)) (!= a (== b 3))))"
     ]
 
 test_call :: TestTree
 test_call =
   testGroup
-    "Should parse function calls and get/set expressions"
+    "Should parse function calls and index/get expressions"
     [ testCase "with complex call" $
         "func (c) (u, r) (r(y), i) (n) (g) ()"
           `assertExpr` "((((((func c) u r) (r y) i) n) g))",
       testCase "with complex call, typo" $
         "func (c) (u, r (r(y), i) (n) (g) ()"
           `assertExprError` [r|expecting '\)'$|],
-      testCase "with gets and sets" $
-        "breakfast.omelette.filling.meat = ham"
-          `assertExpr` "(.set! (. (. breakfast omelette) filling) meat ham)",
+      testCase "with indices and gets" $
+        [r|breakfast["omelette"].filling[40+2]|]
+          `assertExpr` [r|(@ (@ (@ breakfast "omelette") "filling") (+ 40 2))|],
       testCase "with chained method calls" $
-        "egg.scramble(3).with(cheddar)"
-          `assertExpr` "((. ((. egg scramble) 3) with) cheddar)",
+        "struct{egg: 42}.scramble(3).with(cheddar)"
+          `assertExpr` [r|((@ ((@ (struct ((egg 42))) "scramble") 3) "with") cheddar)|],
       testCase "with nested method calls" $
-        "he.breakfast(omelette.filledWith(cheese), sausage)"
-          `assertExpr` "((. he breakfast) ((. omelette filledWith) cheese) sausage)",
-      testCase "with `super`" $ "super.method()" `assertExpr` "((. (super) method))"
+        "he.breakfast(omelette.filledWith('__cheese__), sausage)"
+          `assertExpr` [r|((@ he "breakfast") ((@ omelette "filledWith") '__cheese__) sausage)|]
     ]
 
 -- Statements (and Declarations):

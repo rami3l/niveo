@@ -27,7 +27,6 @@ import Text.Megaparsec
     choice,
     getSourcePos,
     manyTill,
-    manyTill_,
     option,
     registerParseError,
     satisfy,
@@ -201,8 +200,9 @@ identStr :: Parser String
 identStr = (:) <$> (letterChar <|> single '_') <*> (hidden . many) (alphaNumChar <|> single '_')
 
 strLit :: Parser Token
-strLit = toTokenParser TStr $ toText <$> (doubleQuote *> L.charLiteral `manyTill` doubleQuote)
+strLit = toTokenParser TStr strLit' <?> "string literal"
   where
+    strLit' = lexeme $ toText <$> (doubleQuote *> L.charLiteral `manyTill` doubleQuote)
     doubleQuote = char '"'
 
 numLit :: Parser Token
@@ -256,8 +256,8 @@ instance Prelude.Show Expr where
   show (EList exprs) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
   show (EIfElse cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
   show (ELet ident' init' val) = [i|(let ((#{ident'} #{init'})) #{val})|]
-  show (ELambda params body) = [i|(lambda #{params'} #{body})|] where params' = show @String $ Showable . ToString' . (.lexeme) <$> params
-  show (EStruct kvs) = [i|(struct #{kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
+  show (ELambda params body) = [i|(lambda #{show @String params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
+  show (EStruct kvs) = [i|(struct #{show @String kvs'})|] where kvs' = kvs <&> \case (k, v) ->  Showable [Showable k, Showable v]
   show (ELit lit) = show lit
   show (EVar var) = var.lexeme & toString
   show EError = "<?>"
