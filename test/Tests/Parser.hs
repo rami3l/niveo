@@ -50,16 +50,16 @@ test_struct =
   testGroup
     "Should parse struct expressions"
     [ testCase "without trailing comma" $
-        [r|struct{"foo" + "bar": 4.2, "ba z": true && false}|]
+        [r|struct{"foo" + "bar" = 4.2, "ba z" = true && false}|]
           `assertExpr` [r|(struct (((+ "foo" "bar") 4.2) ("ba z" (&& true false))))|],
-      testCase "with trailing comma" $
+      testCase "with trailing comma and key shorthand" $
         [__i|
           struct{
-            foo: foo,
+            foo,
             baz: [1, 2.3, "4.56"], // <- Here!
           }
         |]
-          `assertExpr` [r|(struct ((foo foo) (baz (list 1 2.3 "4.56"))))|]
+          `assertExpr` [r|(struct (("foo" foo) ("baz" (list 1 2.3 "4.56"))))|]
     ]
 
 test_boolean :: TestTree
@@ -92,7 +92,7 @@ test_call =
           `assertExpr` [r|(@ (@ (@ breakfast "omelette") "filling") (+ 40 2))|],
       testCase "with chained method calls" $
         "struct{egg: 42}.scramble(3).with(cheddar)"
-          `assertExpr` [r|((@ ((@ (struct ((egg 42))) "scramble") 3) "with") cheddar)|],
+          `assertExpr` [r|((@ ((@ (struct (("egg" 42))) "scramble") 3) "with") cheddar)|],
       testCase "with nested method calls" $
         "he.breakfast(omelette.filledWith('__cheese__), sausage)"
           `assertExpr` [r|((@ he "breakfast") ((@ omelette "filledWith") '__cheese__) sausage)|]

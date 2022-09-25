@@ -16,6 +16,7 @@ import Data.Char (isDigit, toLower)
 import Data.Map.Strict qualified as Map
 import Data.String.Interpolate
 import Data.Text qualified as Text
+import Optics (makeFieldLabelsNoPrefix)
 import Relude
 import Text.Megaparsec
   ( MonadParsec (eof, hidden, label, lookAhead, notFollowedBy, takeWhileP, try, withRecovery),
@@ -135,6 +136,8 @@ data Token = Token
   }
   deriving (Eq)
 
+makeFieldLabelsNoPrefix ''Token
+
 instance Prelude.Show Token where show = toString . (.lexeme)
 
 type ParserError = Void
@@ -238,7 +241,7 @@ data Expr
   | EParen Expr
   | EList [Expr]
   | EIfElse {cond, then', else' :: Expr}
-  | ELet {ident :: Token, init, val :: Expr}
+  | ELet {ident :: !Token, init, val :: Expr}
   | ELambda {params :: ![Token], body :: Expr}
   | EStruct [(Expr, Expr)]
   | ELit !Lit
@@ -257,7 +260,7 @@ instance Prelude.Show Expr where
   show (EIfElse cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
   show (ELet ident' init' val) = [i|(let ((#{ident'} #{init'})) #{val})|]
   show (ELambda params body) = [i|(lambda #{show @String params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
-  show (EStruct kvs) = [i|(struct #{show @String kvs'})|] where kvs' = kvs <&> \case (k, v) ->  Showable [Showable k, Showable v]
+  show (EStruct kvs) = [i|(struct #{show @String kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
   show (EVar var) = var.lexeme & toString
   show EError = "<?>"
@@ -312,11 +315,17 @@ primary =
     ]
     <?> "primary expression"
   where
-    structKV = do
-      field <- expression <?> "field"
-      -- TODO: Implement named field punning?
-      value <- op TColon *> (expression <?> "value")
-      pure (field, value)
+    structKV =
+      ( do
+          -- Sugar when the key string can be parsed as ident.
+          -- `foo: bar` => `"foo" = bar`
+          -- `foo` => `"foo" = foo` (Named field punning)
+          field <- ident <?> "field"
+          let fieldStr = ELit . LStr $ field.lexeme
+          value <- optional (op TColon *> (expression <?> "value"))
+          pure (fieldStr, value & fromMaybe (EVar field))
+      )
+        <|> (,) <$> (expression <?> "field") <*> (op TEq *> (expression <?> "value"))
 
 toInfixLParser :: Parser Expr -> (Expr -> Parser Expr) -> Parser Expr
 toInfixLParser car cdr = do
@@ -341,10 +350,7 @@ call = label "call expression" $
 
 unary, pow, factor, term, comparison, equality, logicAnd, logicOr :: Parser Expr
 unary =
-  ( EUnary
-      <$> choice (op <$> [TBang, TPlus, TMinus])
-      <*> (unary <?> "operand")
-  )
+  (EUnary <$> choice (op <$> [TBang, TPlus, TMinus]) <*> (unary <?> "operand"))
     <|> call
 pow = do
   lhs <- unary <?> "operand"
