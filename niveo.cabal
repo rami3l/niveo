@@ -74,7 +74,6 @@ library
     , extra
     , megaparsec
     , optics
-    , raw-strings-qq
     , relude
     , string-interpolate
     , witch
@@ -130,7 +129,6 @@ executable niveo-exe
     , megaparsec
     , niveo
     , optics
-    , raw-strings-qq
     , relude
     , string-interpolate
     , witch
@@ -191,7 +189,6 @@ test-suite niveo-test
     , megaparsec
     , niveo
     , optics
-    , raw-strings-qq
     , regex-tdfa
     , relude
     , string-interpolate

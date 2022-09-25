@@ -7,7 +7,6 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (Assertion, testCase, (@?=))
 import Tests.Common (assertRegexMatch)
 import Text.Megaparsec (MonadParsec (eof), errorBundlePretty, parse)
-import Text.RawString.QQ
 
 parse' :: Show a => Parser a -> Text -> Either Text Text
 parse' parser got = parse parser "" got & bimap (toText . errorBundlePretty) show
@@ -40,7 +39,7 @@ test_arithmetic =
         "-(-1+2 / 3- 4 *5+ (6/ 7))"
           `assertExpr` "(- (+ (- (+ (- 1) (/ 2 3)) (* 4 5)) (/ 6 7)))",
       testCase "with paren mismatch" $
-        "-(-1+2 / 3- 4 *5+ (6/ 7)" `assertExprError` [r|expecting '\)'$|],
+        "-(-1+2 / 3- 4 *5+ (6/ 7)" `assertExprError` [i|expecting '\\)'$|],
       testCase "with binary misused as unary" $
         "*1" `assertExprError` "expecting expression$"
     ]
@@ -50,8 +49,8 @@ test_struct =
   testGroup
     "Should parse struct expressions"
     [ testCase "without trailing comma" $
-        [r|struct{"foo" + "bar" = 4.2, "ba z" = true && false}|]
-          `assertExpr` [r|(struct (((+ "foo" "bar") 4.2) ("ba z" (&& true false))))|],
+        [i|struct{"foo" + "bar" = 4.2, "ba z" = true && false}|]
+          `assertExpr` [i|(struct (((+ "foo" "bar") 4.2) ("ba z" (&& true false))))|],
       testCase "with trailing comma and key shorthand" $
         [__i|
           struct{
@@ -59,7 +58,7 @@ test_struct =
             baz: [1, 2.3, "4.56"], // <- Here!
           }
         |]
-          `assertExpr` [r|(struct (("foo" foo) ("baz" (list 1 2.3 "4.56"))))|]
+          `assertExpr` [i|(struct (("foo" foo) ("baz" (list 1 2.3 "4.56"))))|]
     ]
 
 test_boolean :: TestTree
@@ -86,16 +85,16 @@ test_call =
           `assertExpr` "((((((func c) u r) (r y) i) n) g))",
       testCase "with complex call, typo" $
         "func (c) (u, r (r(y), i) (n) (g) ()"
-          `assertExprError` [r|expecting '\)'$|],
+          `assertExprError` [i|expecting '\\)'$|],
       testCase "with indices and gets" $
-        [r|breakfast["omelette"].filling[40+2]|]
-          `assertExpr` [r|(@ (@ (@ breakfast "omelette") "filling") (+ 40 2))|],
+        [i|breakfast["omelette"].filling[40+2]|]
+          `assertExpr` [i|(@ (@ (@ breakfast "omelette") "filling") (+ 40 2))|],
       testCase "with chained method calls" $
         "struct{egg: 42}.scramble(3).with(cheddar)"
-          `assertExpr` [r|((@ ((@ (struct (("egg" 42))) "scramble") 3) "with") cheddar)|],
+          `assertExpr` [i|((@ ((@ (struct (("egg" 42))) "scramble") 3) "with") cheddar)|],
       testCase "with nested method calls" $
         "he.breakfast(omelette.filledWith('__cheese__), sausage)"
-          `assertExpr` [r|((@ he "breakfast") ((@ omelette "filledWith") '__cheese__) sausage)|]
+          `assertExpr` [i|((@ he "breakfast") ((@ omelette "filledWith") '__cheese__) sausage)|]
     ]
 
 -- Statements (and Declarations):
@@ -190,17 +189,17 @@ assertProgError = assertError . parse' program
 --         "fun foo_bar(a, b, c, d) { print a * b - c / d; }"
 --           `assertProg` ["(fun foo_bar (a b c d) (print (- (* a b) (/ c d))))"],
 --       testCase "with `class`" $
---         [r|class Foo { bar(baz, boo) { return this + ": Boom"; } }|]
---           `assertProg` [[r|(class Foo ((fun bar (baz boo) (return (+ (this) ": Boom")))))|]],
+--         [i|class Foo { bar(baz, boo) { return this + ": Boom"; } }|]
+--           `assertProg` [[i|(class Foo ((fun bar (baz boo) (return (+ (this) ": Boom")))))|]],
 --       testCase "with `class`, superclass" $
---         [r|class Foo < Bar { bar(baz, boo) { return this + ": Boom"; } }|]
---           `assertProg` [[r|(class Foo (<: Bar) ((fun bar (baz boo) (return (+ (this) ": Boom")))))|]],
+--         [i|class Foo < Bar { bar(baz, boo) { return this + ": Boom"; } }|]
+--           `assertProg` [[i|(class Foo (<: Bar) ((fun bar (baz boo) (return (+ (this) ": Boom")))))|]],
 --       testCase "with `class`, no class name" $
 --         "class" `assertProgError` "expecting class name$",
 --       testCase "with `class`, no superclass" $
 --         "class Foo <" `assertProgError` "expecting superclass$",
 --       testCase "with `class`, no body" $
---         "class Foo" `assertProgError` [r|expecting '\{'$|]
+--         "class Foo" `assertProgError` [i|expecting '\{'$|]
 --     ]
 
 -- test_sync :: TestTree
