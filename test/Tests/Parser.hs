@@ -41,24 +41,66 @@ test_arithmetic =
       testCase "with paren mismatch" $
         "-(-1+2 / 3- 4 *5+ (6/ 7)" `assertExprError` [i|expecting '\\)'$|],
       testCase "with binary misused as unary" $
-        "*1" `assertExprError` "expecting expression$"
+        "*1" `assertExprError` "expecting expression$",
+      testCase "with nested `let`" $
+        [__i|
+          let a =
+            let b =
+              c +
+                let d = e;
+                d + 1;
+            b;
+          let f = a + g;
+          f
+        |]
+          `assertExpr` "(let ((a (let ((b (+ c (let ((d e)) (+ d 1))))) b))) (let ((f (+ a g))) f))",
+      testCase "with `if-else`, `let`, blocks" $
+        [__i|
+          a + {
+            let b = if (p) {
+              c || d
+            } else if (q) {
+              e
+            } else {
+              f
+            };
+            g && b
+          }
+        |]
+          `assertExpr` "(+ a (let ((b (if p (|| c d) (if q e f)))) (&& g b)))"
     ]
 
-test_struct :: TestTree
-test_struct =
+test_coll :: TestTree
+test_coll =
   testGroup
-    "Should parse struct expressions"
-    [ testCase "without trailing comma" $
+    "Should parse collection literals"
+    [ testCase "with struct, no trailing comma" $
         [i|struct{"foo" + "bar" = 4.2, "ba z" = true && false}|]
           `assertExpr` [i|(struct (((+ "foo" "bar") 4.2) ("ba z" (&& true false))))|],
-      testCase "with trailing comma and key shorthand" $
+      testCase "with struct, trailing comma, key shorthand, list" $
         [__i|
           struct{
             foo,
-            baz: [1, 2.3, "4.56"], // <- Here!
+            baz: [1, 2.3, "4.56"], // <- A list!
           }
         |]
           `assertExpr` [i|(struct (("foo" foo) ("baz" (list 1 2.3 "4.56"))))|]
+    ]
+
+test_fun :: TestTree
+test_fun =
+  testGroup
+    "Should parse lambdas"
+    [ testCase "without params" $
+        [__i|
+          fun() { // Closure lambda
+            if (a >= 0) a else -a // Expression-based return
+          }
+        |]
+          `assertExpr` "(lambda '() (if (>= a 0) a (- a)))",
+      testCase "with params" $
+        "fun(a, b) { let res = a + b ** a; res }"
+          `assertExpr` "(lambda (a b) (let ((res (+ a (** b a)))) res))"
     ]
 
 test_boolean :: TestTree
