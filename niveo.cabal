@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Niveo
+      Niveo.Interpreter
       Niveo.Parser
   other-modules:
       Paths_niveo

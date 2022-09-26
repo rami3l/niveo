@@ -5,12 +5,12 @@
 
 packages:
 - completed:
-    hackage: diagnose-2.0.0@sha256:fdd95a13cdb49465f1bd178827cc1090cde1493599c07673acb3e15e517731f5,5721
+    hackage: diagnose-2.0.1@sha256:8a9f26ecf5f6706ee5b03e122cb3dd1b95b81143612347f559cf8cbecd3e0e6c,5781
     pantry-tree:
       size: 1402
-      sha256: beb7ddcc72707373126cdfae46097ed849fd10a6965a2e84e49109e4d59b113d
+      sha256: 8d5cb6d72b11069ba4e5c180391bd54e210bae18ede0310110915fd4d8c32152
   original:
-    hackage: diagnose-2.0.0@sha256:fdd95a13cdb49465f1bd178827cc1090cde1493599c07673acb3e15e517731f5,5721
+    hackage: diagnose-2.0.1
 snapshots:
 - completed:
     size: 636749

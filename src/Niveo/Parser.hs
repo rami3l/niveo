@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Niveo.Parser
   ( Expr,
     Parser,
@@ -13,9 +15,12 @@ where
 import Data.Bimap (Bimap)
 import Data.Bimap qualified as Bimap
 import Data.Char (isDigit, toLower)
+import Data.Either.Extra (mapLeft)
 import Data.Map.Strict qualified as Map
 import Data.String.Interpolate
 import Data.Text qualified as Text
+import Error.Diagnose (Diagnostic)
+import Error.Diagnose.Compat.Megaparsec (HasHints (..), errorDiagnosticFromBundle)
 import Optics (makeFieldLabelsNoPrefix)
 import Relude
 import Text.Megaparsec
@@ -28,6 +33,7 @@ import Text.Megaparsec
     choice,
     getSourcePos,
     manyTill,
+    manyTill_,
     option,
     registerParseError,
     satisfy,
@@ -36,6 +42,7 @@ import Text.Megaparsec
     single,
     (<?>),
   )
+import Text.Megaparsec qualified as Megaparsec
 import Text.Megaparsec.Char
   ( alphaNumChar,
     char,
@@ -246,7 +253,7 @@ data Expr
   | EStruct [(Expr, Expr)]
   | ELit !Lit
   | EVar !Token
-  | EError
+  | EError !Token
 
 newtype Prog = Prog {val :: Expr}
 
@@ -263,7 +270,7 @@ instance Prelude.Show Expr where
   show (EStruct kvs) = [i|(struct #{show @String kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
   show (EVar var) = var.lexeme & toString
-  show EError = "<?>"
+  show (EError _) = "<?>"
 
 instance Prelude.Show Prog where
   show (Prog val) = show val
@@ -373,7 +380,7 @@ logicOr = toInfixLParser logicAnd \c ->
 expression :: Parser Expr
 expression = synced logicOr <?> "expression"
   where
-    synced = withRecovery $ (*> (sync end $> EError)) . registerParseError
+    synced = withRecovery $ (*> (EError <$> sync end)) . registerParseError
     end = choice $ op TSemi : (lookAhead . kw <$> [TTrue, TFalse, TNull, TStruct, TIf, TFun])
 
 -- | Syncs the parser towards the given Token pattern parser.
@@ -383,8 +390,24 @@ expression = synced logicOr <?> "expression"
 -- or right before the next one.
 --
 -- See: <https://craftinginterpreters.com/parsing-expressions.html#synchronizing-a-recursive-descent-parser>
-sync :: Parser Token -> Parser ()
-sync = void . (anySingle `manyTill`)
+sync :: Parser Token -> Parser Token
+sync = (snd <$>) . (anySingle `manyTill_`)
 
 program :: Parser Prog
 program = expression <* eof <&> Prog <?> "program"
+
+-- | A version of `Megaparsec.parse` supercharged by `diagnose` errors.
+parse ::
+  -- | The parser to be run.
+  Parser a ->
+  -- | The input file description.
+  Text ->
+  -- | The input text.
+  Text ->
+  Either (Diagnostic Text) a
+parse parser fin got =
+  Megaparsec.parse parser (toString fin) got
+    & mapLeft (errorDiagnosticFromBundle Nothing "Parse error on input" Nothing)
+
+instance {-# OVERLAPPABLE #-} HasHints Void msg where
+  hints _ = mempty
