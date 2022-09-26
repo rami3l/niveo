@@ -67,16 +67,19 @@ library
       TypeFamilies
       TypeOperators
       UndecidableInstances
-  ghc-options: -Wall
+  ghc-options: -Wall -Wno-unticked-promoted-constructors
   build-depends:
       base >=4.7 && <5
     , bimap
+    , data-default
     , diagnose
     , extra
     , megaparsec
     , optics
     , relude
     , string-interpolate
+    , transformers
+    , vector
     , witch
   default-language: GHC2021
 
@@ -121,10 +124,11 @@ executable niveo-exe
       TypeFamilies
       TypeOperators
       UndecidableInstances
-  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-unticked-promoted-constructors -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
     , bimap
+    , data-default
     , diagnose
     , extra
     , megaparsec
@@ -132,6 +136,8 @@ executable niveo-exe
     , optics
     , relude
     , string-interpolate
+    , transformers
+    , vector
     , witch
   default-language: GHC2021
 
@@ -179,12 +185,13 @@ test-suite niveo-test
       TypeFamilies
       TypeOperators
       UndecidableInstances
-  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-unticked-promoted-constructors -threaded -rtsopts -with-rtsopts=-N
   build-tool-depends:
       tasty-discover:tasty-discover
   build-depends:
       base >=4.7 && <5
     , bimap
+    , data-default
     , diagnose
     , extra
     , megaparsec
@@ -197,5 +204,7 @@ test-suite niveo-test
     , tasty-hunit
     , tasty-quickcheck
     , tasty-smallcheck
+    , transformers
+    , vector
     , witch
   default-language: GHC2021

@@ -62,15 +62,20 @@ dependencies:
   - base >= 4.7 && < 5
   - bimap
   - diagnose
+  - data-default
   - extra
   - megaparsec
   - optics
   - relude
   - string-interpolate
+  - transformers
+  - vector
   - witch
 
 ghc-options:
   - -Wall
+  # https://gitlab.haskell.org/ghc/ghc/-/issues/20531
+  - -Wno-unticked-promoted-constructors
 
 library:
   source-dirs: src

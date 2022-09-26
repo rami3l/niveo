@@ -1,14 +1,16 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Niveo.Parser
-  ( Expr,
+  ( Expr (..),
     Parser,
     ParserErrorBundle,
-    Token,
-    TokenType,
+    Token (..),
+    TokenType (..),
+    Prog (..),
     expression,
     primary,
     program,
+    parse,
   )
 where
 
@@ -19,8 +21,10 @@ import Data.Either.Extra (mapLeft)
 import Data.Map.Strict qualified as Map
 import Data.String.Interpolate
 import Data.Text qualified as Text
-import Error.Diagnose (Diagnostic)
+import Data.Tuple.Extra (both)
+import Error.Diagnose (Diagnostic, Position (..))
 import Error.Diagnose.Compat.Megaparsec (HasHints (..), errorDiagnosticFromBundle)
+import GHC.Records (HasField (..))
 import Optics (makeFieldLabelsNoPrefix)
 import Relude
 import Text.Megaparsec
@@ -51,6 +55,7 @@ import Text.Megaparsec.Char
     string,
   )
 import Text.Megaparsec.Char.Lexer qualified as L
+import Text.Megaparsec.Pos (SourcePos (..))
 import Prelude qualified
 
 kws :: Bimap TokenType Text
@@ -137,15 +142,21 @@ data TokenType
   deriving (Show, Ord, Eq)
 
 data Token = Token
-  { type_ :: TokenType,
-    lexeme :: Text,
-    pos :: SourcePos
+  { type_ :: !TokenType,
+    lexeme :: !Text,
+    pos :: !SourcePos
   }
   deriving (Eq)
 
 makeFieldLabelsNoPrefix ''Token
 
 instance Prelude.Show Token where show = toString . (.lexeme)
+
+instance HasField "range" Token Error.Diagnose.Position where
+  getField tk =
+    let start = both (fromIntegral . Megaparsec.unPos) (sourceLine tk.pos, sourceColumn tk.pos)
+        end = second (+ Text.length tk.lexeme) start
+     in Position start end $ sourceName tk.pos
 
 type ParserError = Void
 
@@ -255,7 +266,7 @@ data Expr
   | EVar !Token
   | EError !Token
 
-newtype Prog = Prog {val :: Expr}
+newtype Prog = Prog {expr :: Expr}
 
 instance Prelude.Show Expr where
   show (EUnary op' rhs) = [i|(#{op'} #{rhs})|]
@@ -400,13 +411,13 @@ program = expression <* eof <&> Prog <?> "program"
 parse ::
   -- | The parser to be run.
   Parser a ->
-  -- | The input file description.
-  Text ->
+  -- | The input file path.
+  FilePath ->
   -- | The input text.
   Text ->
   Either (Diagnostic Text) a
 parse parser fin got =
-  Megaparsec.parse parser (toString fin) got
+  Megaparsec.parse parser fin got
     & mapLeft (errorDiagnosticFromBundle Nothing "Parse error on input" Nothing)
 
 instance {-# OVERLAPPABLE #-} HasHints Void msg where
