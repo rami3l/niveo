@@ -73,14 +73,13 @@ library
     , bimap
     , data-default
     , diagnose
+    , effectful-core
     , extra
     , megaparsec
     , optics
     , relude
     , string-interpolate
-    , transformers
     , vector
-    , witch
   default-language: GHC2021
 
 executable niveo-exe
@@ -130,15 +129,14 @@ executable niveo-exe
     , bimap
     , data-default
     , diagnose
+    , effectful-core
     , extra
     , megaparsec
     , niveo
     , optics
     , relude
     , string-interpolate
-    , transformers
     , vector
-    , witch
   default-language: GHC2021
 
 test-suite niveo-test
@@ -193,6 +191,7 @@ test-suite niveo-test
     , bimap
     , data-default
     , diagnose
+    , effectful-core
     , extra
     , megaparsec
     , niveo
@@ -204,7 +203,5 @@ test-suite niveo-test
     , tasty-hunit
     , tasty-quickcheck
     , tasty-smallcheck
-    , transformers
     , vector
-    , witch
   default-language: GHC2021
