@@ -15,22 +15,21 @@ jobs:
 
       - uses: haskell/actions/setup@v2
         with:
-          # ghc-version: "9.0.2" # Exact version of ghc to use
+          ghc-version: "9.2.4" # Exact version of ghc to use
           # cabal-version: 'latest'. Omitted, but defaults to 'latest'
-          enable-stack: true
-          stack-version: "latest"
-          stack-no-global: true
 
-      - name: Cache Stack downloads
+      - name: Cache build
         uses: actions/cache@v3
-        env:
-          cache-name: cache-stack-modules
         with:
-          path: /home/runner/.stack/
-          key: ${{ hashFiles('**/stack.yaml.lock') }}
+          path: |
+            ${{ steps.setup-haskell-cabal.outputs.cabal-store }}
+            dist-newstyle
+          key: ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('cabal.project.freeze') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.ghc }}-
 
       - name: Test native build
-        run: stack build
+        run: cabal build
 
       - name: Run simple tests
-        run: stack test
+        run: cabal test
