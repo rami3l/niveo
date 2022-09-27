@@ -1,18 +1,25 @@
-module Niveo.Interpreter where
+module Niveo.Interpreter
+  ( Val (..),
+    Env,
+    Context (..),
+    Store (..),
+    interpret,
+    eval,
+  )
+where
 
 import Data.Default (Default (def))
-import Data.Either.Extra (mapLeft, maybeToEither)
 import Data.String.Interpolate
 import Data.Vector (Vector)
 import Effectful
 import Effectful.Error.Static
+import Effectful.Reader.Static
 import Effectful.State.Static.Local
 import Error.Diagnose (Marker (This), addFile, addReport, err)
 import Error.Diagnose.Diagnostic (Diagnostic)
-import Error.Diagnose.Report (Report)
 import Niveo.Parser (Expr (..), Prog (..), Token (..), TokenType (..), parse, program)
 import Optics.TH (makeFieldLabelsNoPrefix)
-import Relude hiding (State, get)
+import Relude hiding (Reader, State, ask, get)
 
 data Val
   = -- Native JSON types.
@@ -27,46 +34,79 @@ data Val
   | -- Extra types.
     VAtom !Text
   | VLambda {params :: !Token, body :: Expr}
+  deriving (Eq)
 
 -- TODO: Add proper pretty-printing for `Val`.
 deriving instance Show Val
 
-type Env = HashMap Text Expr
+newtype Store = Store
+  { env :: Env
+  }
 
-data Context = Context {env :: Env, fin :: FilePath, src :: Text}
+type Env = HashMap Text Val
+
+makeFieldLabelsNoPrefix ''Store
+
+data Context = Context
+  { fin :: FilePath,
+    src :: Text
+  }
 
 makeFieldLabelsNoPrefix ''Context
 
 interpret ::
-  (Error (Diagnostic Text) :> es, State Context :> es) =>
+  (Error (Diagnostic Text) :> es, Reader Context :> es, State Store :> es) =>
   Eff es Val
 interpret = do
-  ctx <- get @Context
+  ctx <- ask @Context
   prog <- parse program ctx.fin ctx.src & either throwError pure
   eval prog.expr
 
 eval ::
-  (Error (Diagnostic Text) :> es, State Context :> es) =>
+  (Error (Diagnostic Text) :> es, Reader Context :> es, State Store :> es) =>
   Expr ->
   Eff es Val
 eval expr = do
-  ctx <- get @Context
+  ctx <- ask @Context
   let diag = addFile @Text def ctx.fin $ toString ctx.src
-  throwError diag
-
--- eval (EUnary op rhs) = do
---   rhs' <- eval rhs
---   case (op.type_, rhs') of
---     (TBang, VBool b) -> pure . VBool $ not b
---     (TPlus, VNum n) -> pure . VNum $ n
---     (TMinus, VNum n) -> pure . VNum $ negate n
---     _ ->
---       throwE $
---         err
---           Nothing
---           "Type mismatch"
---           [(op.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
---           []
+  let throwReport msg markers = throwError . (diag `addReport`) $ err Nothing msg markers []
+  case expr of
+    (EUnary op rhs) -> do
+      rhs' <- eval rhs
+      case (op.type_, rhs') of
+        (TBang, VBool b) -> pure . VBool $ not b
+        (TPlus, VNum x) -> pure . VNum $ x
+        (TMinus, VNum x) -> pure . VNum $ negate x
+        _ ->
+          throwReport
+            "Type mismatch"
+            [(op.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
+    (EBinary lhs op rhs) -> do
+      (lhs', rhs') <- (,) <$> eval lhs <*> eval rhs
+      case (op.type_, lhs', rhs') of
+        (TStar2, VNum x, VNum y) -> pure . VNum $ x ** y
+        (TSlash, VNum x, VNum y) -> pure . VNum $ x / y
+        (TStar, VNum x, VNum y) -> pure . VNum $ x * y
+        (TMinus, VNum x, VNum y) -> pure . VNum $ x - y
+        (TPlus, VNum x, VNum y) -> pure . VNum $ x + y
+        (TPlus, VStr x, VStr y) -> pure . VStr $ x <> y
+        (TPlus, VList x, VList y) -> pure . VList $ x <> y
+        (TGtEq, VNum x, VNum y) -> pure . VBool $ x >= y
+        (TGt, VNum x, VNum y) -> pure . VBool $ x > y
+        (TLtEq, VNum x, VNum y) -> pure . VBool $ x <= y
+        (TLt, VNum x, VNum y) -> pure . VBool $ x < y
+        (TBangEq, x, y) -> pure . VBool $ x /= y
+        (TEq2, x, y) -> pure . VBool $ x == y
+        (TAmp2, VBool x, VBool y) -> pure . VBool $ x && y
+        (TPipe2, VBool x, VBool y) -> pure . VBool $ x || y
+        _ ->
+          throwReport
+            "Type mismatch"
+            [(op.range, This [i|Could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
+    _ ->
+      throwReport
+        "Unsupported operation"
+        []
 
 -- eval (EVar Token {lexeme}) = do
 --   def <- get <&> (Map.!? lexeme)

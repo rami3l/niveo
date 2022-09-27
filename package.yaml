@@ -89,6 +89,8 @@ executables:
       - -with-rtsopts=-N
     dependencies:
       - niveo
+      - haskeline
+      - optparse-applicative
 
 tests:
   niveo-test:
