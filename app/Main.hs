@@ -8,7 +8,6 @@ import Options.Applicative
     helper,
     info,
   )
-import Relude
 
 main :: IO ()
 main = execParser opts >>= dispatch

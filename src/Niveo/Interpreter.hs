@@ -19,7 +19,7 @@ import Error.Diagnose (Marker (This), addFile, addReport, err)
 import Error.Diagnose.Diagnostic (Diagnostic)
 import Niveo.Parser (Expr (..), Prog (..), Token (..), TokenType (..), parse, program)
 import Optics.TH (makeFieldLabelsNoPrefix)
-import Relude hiding (Reader, State, ask, get)
+import Prelude hiding (Reader, State, ask, get)
 
 data Val
   = -- Native JSON types.
