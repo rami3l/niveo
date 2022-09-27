@@ -11,6 +11,13 @@ packages:
       sha256: 8d5cb6d72b11069ba4e5c180391bd54e210bae18ede0310110915fd4d8c32152
   original:
     hackage: diagnose-2.0.1
+- completed:
+    hackage: effectful-core-2.1.0.0@sha256:8cb5e4bc3336a1a17eb8689fe8ae4ebecbe5ee8b088794024d68f5a282c0588b,3622
+    pantry-tree:
+      size: 1855
+      sha256: 3f39289662a3f4ff6a9c4b1046758d1edaa5180e48e764d785dfc2100f38c000
+  original:
+    hackage: effectful-core-2.1.0.0
 snapshots:
 - completed:
     size: 636749
