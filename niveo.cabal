@@ -85,6 +85,7 @@ library
 executable niveo-exe
   main-is: Main.hs
   other-modules:
+      Dispatch
       Paths_niveo
   hs-source-dirs:
       app
@@ -131,9 +132,11 @@ executable niveo-exe
     , diagnose
     , effectful-core
     , extra
+    , haskeline
     , megaparsec
     , niveo
     , optics
+    , optparse-applicative
     , relude
     , string-interpolate
     , vector

@@ -243,6 +243,7 @@ data Lit
   | LNum !Text
   | LStr !Text
   | LAtom !Text
+  deriving (Eq)
 
 instance Prelude.Show Lit where
   show LNull = "null"
@@ -265,6 +266,7 @@ data Expr
   | ELit !Lit
   | EVar !Token
   | EError !Token
+  deriving (Eq)
 
 newtype Prog = Prog {expr :: Expr}
 

@@ -1,7 +1,17 @@
 module Main where
 
-import Niveo
+import Dispatch (args, dispatch)
+import Options.Applicative
+  ( execParser,
+    fullDesc,
+    header,
+    helper,
+    info,
+  )
 import Relude
 
 main :: IO ()
-main = someFunc
+main = execParser opts >>= dispatch
+  where
+    opts = (args <**> helper) `info` infoMod
+    infoMod = fullDesc <> header "niveo - A programmable configuration language."
