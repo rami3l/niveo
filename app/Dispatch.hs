@@ -19,7 +19,7 @@ import Options.Applicative
     strOption,
     switch,
   )
-import Relude hiding (Reader, State, ask, get)
+import Prelude hiding (Reader, State)
 import System.Console.Haskeline (InputT)
 
 data Args = Args

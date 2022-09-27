@@ -1,7 +1,6 @@
 module Tests.Common where
 
 import Data.String.Interpolate
-import Relude
 import Test.Tasty.HUnit (Assertion, (@?))
 import Text.Regex.TDFA ((=~))
 

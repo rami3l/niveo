@@ -39,7 +39,7 @@ default-extensions:
   - MultiWayIf
   - NamedFieldPuns
   - NoFieldSelectors
-  - NoImplicitPrelude # https://github.com/commercialhaskell/stack/issues/5077
+  # - NoImplicitPrelude # https://github.com/commercialhaskell/stack/issues/5077
   - NoStarIsType
   - OverloadedLabels
   - OverloadedRecordDot
@@ -59,7 +59,14 @@ default-extensions:
   - UndecidableInstances
 
 dependencies:
-  - base >= 4.7 && < 5
+  - name: base
+    version: ">= 4.7 && < 5"
+    mixin:
+      - hiding (Prelude)
+  - name: relude
+    mixin:
+      - (Relude as Prelude)
+      - ""
   - bimap
   - data-default
   - diagnose
@@ -67,7 +74,6 @@ dependencies:
   - extra
   - megaparsec
   - optics
-  - relude
   - string-interpolate
   - vector
 

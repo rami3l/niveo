@@ -1,8 +1,8 @@
 cradle:
-  stack:
+  cabal:
     - path: "./app"
-      component: "niveo:exe:niveo-exe"
+      component: "exe:niveo-exe"
     - path: "./src"
-      component: "niveo:lib"
+      component: "lib:niveo"
     - path: "./test"
-      component: "niveo:test:niveo-test"
+      component: "test:niveo-test"

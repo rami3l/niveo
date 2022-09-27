@@ -2,7 +2,6 @@ module Tests.Parser where
 
 import Data.String.Interpolate
 import Niveo.Parser (Parser, expression, program)
-import Relude
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (Assertion, testCase, (@?=))
 import Tests.Common (assertRegexMatch)

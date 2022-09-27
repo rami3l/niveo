@@ -25,8 +25,9 @@ import Data.Tuple.Extra (both)
 import Error.Diagnose (Diagnostic, Position (..))
 import Error.Diagnose.Compat.Megaparsec (HasHints (..), errorDiagnosticFromBundle)
 import GHC.Records (HasField (..))
+import GHC.Show (Show (..))
 import Optics (makeFieldLabelsNoPrefix)
-import Relude
+import Relude.Base
 import Text.Megaparsec
   ( MonadParsec (eof, hidden, label, lookAhead, notFollowedBy, takeWhileP, try, withRecovery),
     ParseErrorBundle,
@@ -56,7 +57,7 @@ import Text.Megaparsec.Char
   )
 import Text.Megaparsec.Char.Lexer qualified as L
 import Text.Megaparsec.Pos (SourcePos (..))
-import Prelude qualified
+import Prelude hiding (show)
 
 kws :: Bimap TokenType Text
 kws =
@@ -279,8 +280,8 @@ instance Prelude.Show Expr where
   show (EList exprs) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
   show (EIfElse cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
   show (ELet ident' init' val) = [i|(let ((#{ident'} #{init'})) #{val})|]
-  show (ELambda params body) = [i|(lambda #{show @String params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
-  show (EStruct kvs) = [i|(struct #{show @String kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
+  show (ELambda params body) = [i|(lambda #{show params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
+  show (EStruct kvs) = [i|(struct #{show kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
   show (EVar var) = var.lexeme & toString
   show (EError _) = "<?>"
@@ -290,14 +291,14 @@ instance Prelude.Show Prog where
 
 data Showable = forall a. Show a => Showable a
 
-instance Prelude.Show Showable where
+instance Show Showable where
   show (Showable a) = show a
   showList [] = const "'()"
-  showList as = const [i|(#{Prelude.unwords $ fmap show as})|]
+  showList as = const [i|(#{intercalate " " $ fmap show as})|]
 
 data ToString' = forall a. ToString a => ToString' a
 
-instance Prelude.Show ToString' where
+instance Show ToString' where
   show (ToString' a) = toString a
 
 -- Expressions:

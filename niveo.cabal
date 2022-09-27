@@ -1,4 +1,4 @@
-cabal-version: 1.12
+cabal-version: 2.0
 
 -- This file has been generated from package.yaml by hpack version 0.35.0.
 --
@@ -30,6 +30,8 @@ library
       Niveo.Parser
   other-modules:
       Paths_niveo
+  autogen-modules:
+      Paths_niveo
   hs-source-dirs:
       src
   default-extensions:
@@ -50,7 +52,6 @@ library
       MultiWayIf
       NamedFieldPuns
       NoFieldSelectors
-      NoImplicitPrelude
       NoStarIsType
       OverloadedLabels
       OverloadedRecordDot
@@ -80,12 +81,18 @@ library
     , relude
     , string-interpolate
     , vector
+  mixins:
+      base hiding (Prelude)
+    , relude (Relude as Prelude)
+    , relude 
   default-language: GHC2021
 
 executable niveo-exe
   main-is: Main.hs
   other-modules:
       Dispatch
+      Paths_niveo
+  autogen-modules:
       Paths_niveo
   hs-source-dirs:
       app
@@ -107,7 +114,6 @@ executable niveo-exe
       MultiWayIf
       NamedFieldPuns
       NoFieldSelectors
-      NoImplicitPrelude
       NoStarIsType
       OverloadedLabels
       OverloadedRecordDot
@@ -140,6 +146,10 @@ executable niveo-exe
     , relude
     , string-interpolate
     , vector
+  mixins:
+      base hiding (Prelude)
+    , relude (Relude as Prelude)
+    , relude 
   default-language: GHC2021
 
 test-suite niveo-test
@@ -148,6 +158,8 @@ test-suite niveo-test
   other-modules:
       Tests.Common
       Tests.Parser
+      Paths_niveo
+  autogen-modules:
       Paths_niveo
   hs-source-dirs:
       test
@@ -169,7 +181,6 @@ test-suite niveo-test
       MultiWayIf
       NamedFieldPuns
       NoFieldSelectors
-      NoImplicitPrelude
       NoStarIsType
       OverloadedLabels
       OverloadedRecordDot
@@ -207,4 +218,8 @@ test-suite niveo-test
     , tasty-quickcheck
     , tasty-smallcheck
     , vector
+  mixins:
+      base hiding (Prelude)
+    , relude (Relude as Prelude)
+    , relude 
   default-language: GHC2021
