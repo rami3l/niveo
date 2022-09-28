@@ -70,12 +70,13 @@ dependencies:
   - bimap
   - data-default
   - diagnose
-  - effectful-core
+  - effectful
   - extra
   - megaparsec
   - optics
   - string-interpolate
   - vector
+  - witch
 
 ghc-options:
   - -Wall

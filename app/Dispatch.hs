@@ -4,12 +4,14 @@ module Dispatch
   )
 where
 
+import Data.Default (Default (..))
 import Effectful
 import Effectful.Error.Static
 import Effectful.Reader.Static
-import Effectful.State.Static.Local
 import Error.Diagnose (Diagnostic)
-import Niveo.Interpreter (Context, Store)
+import Error.Diagnose.Diagnostic (printDiagnostic)
+import Error.Diagnose.Style (defaultStyle)
+import Niveo.Interpreter (Context (..), interpret)
 import Options.Applicative
   ( Parser,
     help,
@@ -19,8 +21,14 @@ import Options.Applicative
     strOption,
     switch,
   )
-import Prelude hiding (Reader, State)
-import System.Console.Haskeline (InputT)
+import System.Console.Haskeline
+  ( InputT,
+    defaultSettings,
+    getInputLine,
+    outputStrLn,
+    runInputT,
+  )
+import Prelude hiding (Reader, runReader)
 
 data Args = Args
   { fin :: Maybe FilePath,
@@ -28,22 +36,30 @@ data Args = Args
   }
 
 args :: Parser Args
-args =
-  let load =
-        strOption $
-          long "load"
-            <> short 'f'
-            <> metavar "FILE"
-            <> help "Load a source file"
-      repl = long "repl" <> short 'i' <> help "REPL (interactive) mode"
-   in Args
-        <$> optional load
-        <*> switch repl
+args = Args <$> optional (strOption load) <*> switch repl'
+  where
+    load =
+      long "load"
+        <> short 'f'
+        <> metavar "FILE"
+        <> help "Load a source file"
+    repl' = long "repl" <> short 'i' <> help "REPL (interactive) mode"
 
 dispatch :: Args -> IO ()
-dispatch (Args fin repl) = do
-  -- TODO: Read `fin` (if exists) and then launch REPL (if `repl`).
-  undefined
+dispatch (Args fin repl') = do
+  -- fin `whenJust` \fin' -> undefined -- TODO: load fin'
+  when (isNothing fin || repl') repl
 
-repl :: (IOE :> es, Reader Context :> es, State Store :> es) => InputT (Eff es) ()
-repl = undefined
+repl :: IO ()
+repl = runInputT defaultSettings loop
+  where
+    loop = do
+      getInputLine ">> " >>= (`whenJust` interpret')
+      loop
+    interpret' ln = res & either (liftIO . printErr) print'
+      where
+        res = runPureEff . runReader ctx . runErrorNoCallStack $ interpret
+        ctx = Context {env = def, fin = "<stdin>", src = toText ln}
+        print' = outputStrLn . ("<< " <>) . show @String
+        printErr = printDiagnostic stdout useUnicode useColors 4 defaultStyle
+        (useUnicode, useColors) = (True, True)
