@@ -1,8 +1,7 @@
-{-# OPTIONS_GHC -Wno-orphans #-}
-
 module Niveo.Parser
   ( Expr (..),
     Lit (..),
+    LitType (..),
     Parser,
     ParserErrorBundle,
     Prog (..),
@@ -24,10 +23,11 @@ import Data.String.Interpolate
 import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import Error.Diagnose (Diagnostic, Position (..))
-import Error.Diagnose.Compat.Megaparsec (HasHints (..), errorDiagnosticFromBundle)
+import Error.Diagnose.Compat.Megaparsec (errorDiagnosticFromBundle)
 import Error.Diagnose.Diagnostic (addFile)
 import GHC.Records (HasField (..))
 import GHC.Show (Show (..))
+import Niveo.Instances ()
 import Optics (makeFieldLabelsNoPrefix)
 import Relude.Base
 import Text.Megaparsec
@@ -158,7 +158,9 @@ instance Prelude.Show Token where show = toString . (.lexeme)
 instance HasField "range" Token Error.Diagnose.Position where
   getField tk =
     let start = both (fromIntegral . Megaparsec.unPos) (sourceLine tk.pos, sourceColumn tk.pos)
-        end = second (+ Text.length tk.lexeme) start
+        -- Length offset: "lexeme" (+2), 'lexeme (+1), lexeme (0)
+        offset = case tk.type_ of TStr -> 2; TAtom -> 1; _ -> 0
+        end = second (+ (Text.length tk.lexeme + offset)) start
      in Position start end $ sourceName tk.pos
 
 type ParserError = Void
@@ -240,53 +242,67 @@ numLit = label "number literal" $ lexeme do
 digits :: Parser Text
 digits = Text.cons <$> (satisfy isDigit <?> "digit") <*> hidden (takeWhileP Nothing isDigit)
 
-data Lit
-  = LNull
-  | LBool !Bool
-  | LNum !Text
-  | LStr !Text
-  | LAtom !Text
-  deriving (Eq)
+data LitType = LNull | LBool | LNum | LStr | LAtom deriving (Eq)
+
+data Lit = Lit {type_ :: LitType, tok :: Token} deriving (Eq)
+
+instance HasField "range" Lit Error.Diagnose.Position where
+  getField (Lit _ tok) = tok.range
 
 instance Prelude.Show Lit where
-  show LNull = "null"
-  show (LBool b) = toLower <$> show b
-  show (LNum n) = toString n
-  show (LStr s) = show s
-  show (LAtom s) = [i|'#{s}|]
+  show (Lit LNull _) = "null"
+  show (Lit LBool b) = toLower <$> toString b.lexeme
+  show (Lit LNum n) = toString n.lexeme
+  show (Lit LStr s) = show s.lexeme
+  show (Lit LAtom s) = '\'' : toString s.lexeme
 
 data Expr
   = EUnary {op :: !Token, rhs :: Expr}
   | EBinary {lhs :: Expr, op :: !Token, rhs :: Expr}
   | ECall {callee :: Expr, args :: [Expr], end :: !Token}
-  | EIndex {from, idx :: Expr, end :: !Token}
-  | EParen Expr
-  | EList [Expr]
-  | EIfElse {cond, then', else' :: Expr}
+  | EIndex {this, idx :: Expr, end :: !Token}
+  | EParen {inner :: Expr, end :: !Token}
+  | EList {exprs :: [Expr], end :: !Token}
+  | EIfElse {kw :: Token, cond, then', else' :: Expr}
   | ELet {ident :: !Token, init, val :: Expr}
-  | ELambda {params :: ![Token], body :: Expr}
-  | EStruct [(Expr, Expr)]
+  | ELambda {kw :: !Token, params :: ![Token], body :: Expr}
+  | EStruct {kw :: !Token, kvs :: [(Expr, Expr)]}
   | ELit !Lit
   | EVar !Token
   | EError !Token
   deriving (Eq)
 
-newtype Prog = Prog {expr :: Expr}
+instance HasField "range" Expr Error.Diagnose.Position where
+  getField (EUnary op' _) = op'.range
+  getField (EBinary _ op' _) = op'.range
+  getField (ECall _ _ end') = end'.range
+  getField (EIndex _ _ end') = end'.range
+  getField (EParen _ end') = end'.range
+  getField (EList _ end') = end'.range
+  getField (EIfElse kw' _ _ _) = kw'.range
+  getField (ELet ident' _ _) = ident'.range
+  getField (ELambda kw' _ _) = kw'.range
+  getField (EStruct kw' _) = kw'.range
+  getField (ELit lit) = lit.range
+  getField (EVar var) = var.range
+  getField (EError tok) = tok.range
 
 instance Prelude.Show Expr where
   show (EUnary op' rhs) = [i|(#{op'} #{rhs})|]
   show (EBinary lhs op' rhs) = [i|(#{op'} #{lhs} #{rhs})|]
   show (ECall callee args _) = show $ Showable callee : Showable `fmap` args
   show (EIndex this idx _) = [i|(@ #{this} #{idx})|]
-  show (EParen inner) = show inner
-  show (EList exprs) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
-  show (EIfElse cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
+  show (EParen inner _) = show inner
+  show (EList exprs _) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
+  show (EIfElse _ cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
   show (ELet ident' init' val) = [i|(let ((#{ident'} #{init'})) #{val})|]
-  show (ELambda params body) = [i|(lambda #{show params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
-  show (EStruct kvs) = [i|(struct #{show kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
+  show (ELambda _ params body) = [i|(lambda #{show params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
+  show (EStruct _ kvs) = [i|(struct #{show kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
   show (EVar var) = var.lexeme & toString
   show (EError _) = "<?>"
+
+newtype Prog = Prog {expr :: Expr}
 
 instance Prelude.Show Prog where
   show (Prog val) = show val
@@ -306,7 +322,7 @@ instance Show ToString' where
 -- Expressions:
 
 block :: Parser Expr
-block = expression & between (op TLBrace) (op TRBrace) <&> EParen <?> "block"
+block = EParen <$> (op TLBrace *> expression) <*> op TRBrace <?> "block"
 
 paramList :: Parser [Token]
 paramList = between (op TLParen) (op TRParen) (ident `sepBy` hidden (op TComma)) <?> "parameters"
@@ -314,26 +330,27 @@ paramList = between (op TLParen) (op TRParen) (ident `sepBy` hidden (op TComma))
 primary :: Parser Expr
 primary =
   choice
-    [ kw TTrue $> ELit (LBool True),
-      kw TFalse $> ELit (LBool False),
-      kw TNull $> ELit LNull,
-      numLit <&> ELit . LNum . (.lexeme),
-      strLit <&> ELit . LStr . (.lexeme),
-      EParen <$> between (op TLParen) (op TRParen) expression,
+    [ kw TTrue <&> ELit . Lit LBool,
+      kw TFalse <&> ELit . Lit LBool,
+      kw TNull <&> ELit . Lit LNull,
+      numLit <&> ELit . Lit LNum,
+      strLit <&> ELit . Lit LStr,
+      EParen <$> (op TLParen *> expression) <*> op TRParen,
       block,
       -- TODO: Remove EBlock and add ELet in the reference manual.
       ELet
         <$> (kw TLet *> ident)
         <*> (op TEq *> expression)
         <*> (op TSemi *> expression),
-      EList <$> between (op TLBrack) (op TRBrack) (expression `sepEndBy` op TComma),
-      EStruct <$> between (kw TStruct *> op TLBrace) (op TRBrace) (structKV `sepEndBy` op TComma),
+      EList <$> (op TLBrack *> (expression `sepEndBy` op TComma)) <*> op TRBrack,
+      EStruct <$> kw TStruct <*> between (op TLBrace) (op TRBrace) (structKV `sepEndBy` op TComma),
       EIfElse
-        <$> (kw TIf *> between (op TLParen) (op TRParen) (expression <?> "condition"))
+        <$> kw TIf
+        <*> between (op TLParen) (op TRParen) (expression <?> "condition")
         <*> (expression <?> "then branch")
         <*> (kw TElse *> (expression <?> "else branch")),
-      ELambda <$> (kw TFun *> paramList) <*> (block <?> "function body"),
-      atom <&> ELit . LAtom . (.lexeme),
+      ELambda <$> kw TFun <*> paramList <*> (block <?> "function body"),
+      atom <&> ELit . Lit LAtom,
       EVar <$> ident
     ]
     <?> "primary expression"
@@ -344,7 +361,7 @@ primary =
           -- `foo: bar` => `"foo" = bar`
           -- `foo` => `"foo" = foo` (Named field punning)
           field <- ident <?> "field"
-          let fieldStr = ELit . LStr $ field.lexeme
+          let fieldStr = ELit . Lit LStr $ field
           value <- optional (op TColon *> (expression <?> "value"))
           pure (fieldStr, value & fromMaybe (EVar field))
       )
@@ -367,7 +384,7 @@ call = label "call expression" $
     args = expression `sepBy` hidden (op TComma) <?> "arguments"
     goGet c = do
       rawField <- op TDot *> ident <?> "field"
-      let field = ELit . LStr $ rawField.lexeme
+      let field = ELit . Lit LStr $ rawField
       pure $ EIndex c field rawField
     goIndex c = EIndex c <$> (op TLBrack *> (expression <?> "index")) <*> op TRBrack
 
@@ -421,11 +438,8 @@ parse ::
   -- | The input text.
   Text ->
   Either (Diagnostic Text) a
-parse parser fin got = Megaparsec.parse parser fin got & mapLeft toDiag
-  where
-    toDiag bundle =
-      let diag = errorDiagnosticFromBundle Nothing "Parse error on input" Nothing bundle
-       in diag `addFile` fin $ toString got
-
-instance {-# OVERLAPPABLE #-} HasHints Void msg where
-  hints _ = mempty
+parse parser fin src =
+  Megaparsec.parse parser fin src & mapLeft \bundle ->
+    bundle
+      & errorDiagnosticFromBundle Nothing "Parse error on input" Nothing
+      & \diag -> diag `addFile` fin $ toString src
