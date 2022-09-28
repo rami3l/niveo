@@ -2,24 +2,33 @@ module Niveo.Interpreter
   ( Val (..),
     Env,
     Context (..),
-    Store (..),
     interpret,
     eval,
   )
 where
 
 import Data.Default (Default (def))
+import Data.HashMap.Strict qualified as HashMap
 import Data.String.Interpolate
 import Data.Vector (Vector)
 import Effectful
 import Effectful.Error.Static
 import Effectful.Reader.Static
-import Effectful.State.Static.Local
 import Error.Diagnose (Marker (This), addFile, addReport, err)
 import Error.Diagnose.Diagnostic (Diagnostic)
-import Niveo.Parser (Expr (..), Prog (..), Token (..), TokenType (..), parse, program)
+import Niveo.Parser
+  ( Expr (..),
+    Lit (..),
+    Prog (..),
+    Token (..),
+    TokenType (..),
+    parse,
+    program,
+  )
 import Optics.TH (makeFieldLabelsNoPrefix)
-import Prelude hiding (Reader, State, ask, get)
+import Relude.Unsafe (read)
+import Witch
+import Prelude hiding (Reader, ask)
 
 data Val
   = -- Native JSON types.
@@ -33,29 +42,35 @@ data Val
     VStruct (Vector (Val, Val))
   | -- Extra types.
     VAtom !Text
-  | VLambda {params :: !Token, body :: Expr}
+  | VLambda {params :: !Token, body :: Expr, env :: Env}
   deriving (Eq)
+
+instance From Lit Val where
+  from LNull = VNull
+  from (LBool b) = VBool b
+  from (LNum x) = VNum . read . into $ x
+  from (LStr s) = VStr s
+  from (LAtom s) = VAtom s
 
 -- TODO: Add proper pretty-printing for `Val`.
 deriving instance Show Val
 
-newtype Store = Store
-  { env :: Env
-  }
+newtype Env = Env {dict :: HashMap Text Val} deriving (Eq, Show)
 
-type Env = HashMap Text Val
-
-makeFieldLabelsNoPrefix ''Store
+instance Default Env where
+  def = Env {dict = HashMap.empty}
 
 data Context = Context
-  { fin :: FilePath,
+  { env :: Env,
+    fin :: FilePath,
     src :: Text
   }
+  deriving (Generic)
 
 makeFieldLabelsNoPrefix ''Context
 
 interpret ::
-  (Error (Diagnostic Text) :> es, Reader Context :> es, State Store :> es) =>
+  [Error (Diagnostic Text), Reader Context] ~ es =>
   Eff es Val
 interpret = do
   ctx <- ask @Context
@@ -63,7 +78,7 @@ interpret = do
   eval prog.expr
 
 eval ::
-  (Error (Diagnostic Text) :> es, Reader Context :> es, State Store :> es) =>
+  [Error (Diagnostic Text), Reader Context] :>> es =>
   Expr ->
   Eff es Val
 eval expr = do
@@ -103,9 +118,11 @@ eval expr = do
           throwReport
             "Type mismatch"
             [(op.range, This [i|Could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
+    (ELit l) -> pure (from l)
     _ ->
+      -- TODO: Remove this.
       throwReport
-        "Unsupported operation"
+        [i|Unimplemented operation `#{expr}`|]
         []
 
 -- eval (EVar Token {lexeme}) = do

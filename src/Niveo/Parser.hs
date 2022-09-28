@@ -2,15 +2,16 @@
 
 module Niveo.Parser
   ( Expr (..),
+    Lit (..),
     Parser,
     ParserErrorBundle,
+    Prog (..),
     Token (..),
     TokenType (..),
-    Prog (..),
     expression,
+    parse,
     primary,
     program,
-    parse,
   )
 where
 
@@ -24,6 +25,7 @@ import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
 import Error.Diagnose (Diagnostic, Position (..))
 import Error.Diagnose.Compat.Megaparsec (HasHints (..), errorDiagnosticFromBundle)
+import Error.Diagnose.Diagnostic (addFile)
 import GHC.Records (HasField (..))
 import GHC.Show (Show (..))
 import Optics (makeFieldLabelsNoPrefix)
@@ -419,9 +421,11 @@ parse ::
   -- | The input text.
   Text ->
   Either (Diagnostic Text) a
-parse parser fin got =
-  Megaparsec.parse parser fin got
-    & mapLeft (errorDiagnosticFromBundle Nothing "Parse error on input" Nothing)
+parse parser fin got = Megaparsec.parse parser fin got & mapLeft toDiag
+  where
+    toDiag bundle =
+      let diag = errorDiagnosticFromBundle Nothing "Parse error on input" Nothing bundle
+       in diag `addFile` fin $ toString got
 
 instance {-# OVERLAPPABLE #-} HasHints Void msg where
   hints _ = mempty
