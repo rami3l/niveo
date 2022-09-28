@@ -16,9 +16,11 @@ import Effectful.Error.Static
 import Effectful.Reader.Static
 import Error.Diagnose (Marker (This), addFile, addReport, err)
 import Error.Diagnose.Diagnostic (Diagnostic)
+import Niveo.Instances ()
 import Niveo.Parser
   ( Expr (..),
     Lit (..),
+    LitType (..),
     Prog (..),
     Token (..),
     TokenType (..),
@@ -46,11 +48,11 @@ data Val
   deriving (Eq)
 
 instance From Lit Val where
-  from LNull = VNull
-  from (LBool b) = VBool b
-  from (LNum x) = VNum . read . into $ x
-  from (LStr s) = VStr s
-  from (LAtom s) = VAtom s
+  from (Lit LNull _) = VNull
+  from (Lit LBool b) = VBool $ b.lexeme == "true"
+  from (Lit LNum x) = VNum . read . into $ x.lexeme
+  from (Lit LStr s) = VStr s.lexeme
+  from (Lit LAtom s) = VAtom s.lexeme
 
 -- TODO: Add proper pretty-printing for `Val`.
 deriving instance Show Val
@@ -95,8 +97,9 @@ eval expr = do
         _ ->
           throwReport
             "Type mismatch"
-            [(op.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
+            [(expr.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
     (EBinary lhs op rhs) -> do
+      -- Lazy evaluation! No need to worry about short-circuiting.
       (lhs', rhs') <- (,) <$> eval lhs <*> eval rhs
       case (op.type_, lhs', rhs') of
         (TStar2, VNum x, VNum y) -> pure . VNum $ x ** y
@@ -116,13 +119,21 @@ eval expr = do
         (TPipe2, VBool x, VBool y) -> pure . VBool $ x || y
         _ ->
           throwReport
-            "Type mismatch"
-            [(op.range, This [i|Could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
+            "mismatched types"
+            [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
+    -- ECall
+    -- EIndex
+    (EParen x _) -> eval x
+    (EList xs _) -> VList . from <$> eval `traverse` xs
+    (EIfElse _ cond then' else') ->
+      eval cond >>= \case
+        (VBool cond') -> eval $ if cond' then then' else else'
+        cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
     (ELit l) -> pure (from l)
     _ ->
       -- TODO: Remove this.
       throwReport
-        [i|Unimplemented operation `#{expr}`|]
+        [i|unimplemented operation `#{expr}`|]
         []
 
 -- eval (EVar Token {lexeme}) = do
