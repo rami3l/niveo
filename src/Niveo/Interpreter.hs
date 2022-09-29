@@ -7,15 +7,17 @@ module Niveo.Interpreter
   )
 where
 
+import Data.Char (toLower)
 import Data.Default (Default (def))
 import Data.HashMap.Strict qualified as HashMap
 import Data.String.Interpolate
-import Data.Vector (Vector)
+import Data.Vector (Vector, toList)
 import Effectful
 import Effectful.Error.Static
 import Effectful.Reader.Static
 import Error.Diagnose (Marker (This), addFile, addReport, err)
 import Error.Diagnose.Diagnostic (Diagnostic)
+import GHC.Show (Show (..))
 import Niveo.Instances ()
 import Niveo.Parser
   ( Expr (..),
@@ -28,9 +30,10 @@ import Niveo.Parser
     program,
   )
 import Optics.TH (makeFieldLabelsNoPrefix)
+import Relude.Extra.Tuple (traverseBoth)
 import Relude.Unsafe (read)
 import Witch
-import Prelude hiding (Reader, ask)
+import Prelude hiding (Reader, ask, show, toList)
 
 data Val
   = -- Native JSON types.
@@ -44,7 +47,7 @@ data Val
     VStruct (Vector (Val, Val))
   | -- Extra types.
     VAtom !Text
-  | VLambda {params :: !Token, body :: Expr, env :: Env}
+  | VLambda {params :: ![Token], body :: Expr, env :: Env}
   deriving (Eq)
 
 instance From Lit Val where
@@ -54,8 +57,23 @@ instance From Lit Val where
   from (Lit LStr s) = VStr s.lexeme
   from (Lit LAtom s) = VAtom s.lexeme
 
--- TODO: Add proper pretty-printing for `Val`.
-deriving instance Show Val
+instance Show Val where
+  show VNull = "null"
+  show (VBool b) = toLower <$> show b
+  show (VNum n) = showRealFrac n
+  show (VStr s) = show s
+  show (VList vs) = show vs
+  show (VStruct kvs) = [i|struct{#{intercalate ", " kvs'}}|] where kvs' = kvs <&> (\(k, v) -> [i|#{k} = #{v}|]) & toList
+  show (VAtom s) = '\'' : toString s
+  show (VLambda params _ _) = [i|<fun(#{intercalate ", " params'})>|] where params' = into . (.lexeme) <$> params
+  showList vs = const [i|[#{intercalate ", " $ fmap show vs}]|]
+
+-- | If @n@ is an integer, then show it as an integer.
+-- Otherwise it will be shown normally.
+showRealFrac :: (RealFrac a, Show a) => a -> String
+showRealFrac n =
+  let fl = floor @_ @Integer n
+   in if fl == ceiling n then show fl else show n
 
 newtype Env = Env {dict :: HashMap Text Val} deriving (Eq, Show)
 
@@ -129,12 +147,12 @@ eval expr = do
       eval cond >>= \case
         (VBool cond') -> eval $ if cond' then then' else else'
         cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
+    (EStruct _ kvs) -> VStruct . from <$> traverseBoth eval `traverse` kvs
     (ELit l) -> pure (from l)
-    _ ->
+    -- EVar
+    (EError tok) ->
       -- TODO: Remove this.
-      throwReport
-        [i|unimplemented operation `#{expr}`|]
-        []
+      throwReport "internal error" [(expr.range, This [i|illegal expression `#{tok}`|])]
 
 -- eval (EVar Token {lexeme}) = do
 --   def <- get <&> (Map.!? lexeme)
