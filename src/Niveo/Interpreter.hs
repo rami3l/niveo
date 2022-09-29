@@ -17,6 +17,7 @@ import Effectful.Error.Static
 import Effectful.Reader.Static
 import Error.Diagnose (Marker (This), addFile, addReport, err)
 import Error.Diagnose.Diagnostic (Diagnostic)
+import Error.Diagnose.Position (Position)
 import GHC.Show (Show (..))
 import Niveo.Instances ()
 import Niveo.Parser
@@ -30,7 +31,6 @@ import Niveo.Parser
     program,
   )
 import Optics.TH (makeFieldLabelsNoPrefix)
-import Relude.Extra.Tuple (traverseBoth)
 import Relude.Unsafe (read)
 import Witch
 import Prelude hiding (Reader, ask, show, toList)
@@ -44,7 +44,7 @@ data Val
   | VList (Vector Val)
   | -- | `VStruct` is encoded as a `Vector` of @(tag, value)@ pairs,
     -- where the `tag` should be a `VStr` or a `VAtom`.
-    VStruct (Vector (Val, Val))
+    VStruct (Vector (Name, Val))
   | -- Extra types.
     VAtom !Text
   | VLambda {params :: ![Token], body :: Expr, env :: Env}
@@ -75,6 +75,18 @@ showRealFrac n =
   let fl = floor @_ @Integer n
    in if fl == ceiling n then show fl else show n
 
+data Name = NStr !Text | NAtom !Text deriving (Eq)
+
+instance TryFrom Val Name where
+  tryFrom (VStr s) = Right $ NStr s
+  tryFrom (VAtom s) = Right $ NAtom s
+  tryFrom v = Left $ TryFromException v Nothing
+
+instance Show Name where
+  show (NStr s) = show s
+  show (NAtom s) = '\'' : toString s
+  showList ns = const [i|[#{intercalate ", " $ fmap show ns}]|]
+
 newtype Env = Env {dict :: HashMap Text Val} deriving (Eq, Show)
 
 instance Default Env where
@@ -101,59 +113,69 @@ eval ::
   [Error (Diagnostic Text), Reader Context] :>> es =>
   Expr ->
   Eff es Val
-eval expr = do
+eval expr@(EUnary op rhs) = do
+  rhs' <- eval rhs
+  case (op.type_, rhs') of
+    (TBang, VBool b) -> pure . VBool $ not b
+    (TPlus, VNum x) -> pure . VNum $ x
+    (TMinus, VNum x) -> pure . VNum $ negate x
+    _ ->
+      throwReport
+        "mismatched types"
+        [(expr.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
+eval expr@(EBinary lhs op rhs) = do
+  -- Lazy evaluation! No need to worry about short-circuiting.
+  (lhs', rhs') <- (,) <$> eval lhs <*> eval rhs
+  case (op.type_, lhs', rhs') of
+    (TStar2, VNum x, VNum y) -> pure . VNum $ x ** y
+    (TSlash, VNum x, VNum y) -> pure . VNum $ x / y
+    (TStar, VNum x, VNum y) -> pure . VNum $ x * y
+    (TMinus, VNum x, VNum y) -> pure . VNum $ x - y
+    (TPlus, VNum x, VNum y) -> pure . VNum $ x + y
+    (TPlus, VStr x, VStr y) -> pure . VStr $ x <> y
+    (TPlus, VList x, VList y) -> pure . VList $ x <> y
+    (TGtEq, VNum x, VNum y) -> pure . VBool $ x >= y
+    (TGt, VNum x, VNum y) -> pure . VBool $ x > y
+    (TLtEq, VNum x, VNum y) -> pure . VBool $ x <= y
+    (TLt, VNum x, VNum y) -> pure . VBool $ x < y
+    (TBangEq, x, y) -> pure . VBool $ x /= y
+    (TEq2, x, y) -> pure . VBool $ x == y
+    (TAmp2, VBool x, VBool y) -> pure . VBool $ x && y
+    (TPipe2, VBool x, VBool y) -> pure . VBool $ x || y
+    _ ->
+      throwReport
+        "mismatched types"
+        [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
+eval (ECall callee args _) = undefined
+eval (EIndex this idx _) = undefined
+eval (EParen x _) = eval x
+eval (EList xs _) = VList . from <$> eval `traverse` xs
+eval (EIfElse _ cond then' else') =
+  eval cond >>= \case
+    (VBool cond') -> eval $ if cond' then then' else else'
+    cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
+eval (ELet _ init' val) = undefined
+eval (ELambda _ params body) = undefined
+eval (EStruct _ kvs) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
+  where
+    evalName expr' = do
+      mval <- eval expr'
+      case mval & tryInto @Name of
+        Right name -> pure name
+        Left (TryFromException val _) -> throwReport "mismatched types" [(expr'.range, This [i|expected string or atom, found `#{val}`|])]
+eval (ELit l) = pure (from l)
+eval (EVar tk) =
+  ask @Context
+    <&> ((HashMap.!? tk.lexeme) . (.env.dict))
+    >>= maybe (throwReport "undefined variable" [(tk.range, This [i|`#{tk}` not found in this scope|])]) pure
+eval expr@(EError tk) = throwReport "internal error" [(expr.range, This [i|illegal expression `#{tk}`|])]
+
+throwReport ::
+  [Error (Diagnostic Text), Reader Context] :>> es =>
+  Text ->
+  [(Position, Marker Text)] ->
+  Eff es a
+throwReport msg markers = do
   ctx <- ask @Context
   let diag = addFile @Text def ctx.fin $ toString ctx.src
-  let throwReport msg markers = throwError . (diag `addReport`) $ err Nothing msg markers []
-  case expr of
-    (EUnary op rhs) -> do
-      rhs' <- eval rhs
-      case (op.type_, rhs') of
-        (TBang, VBool b) -> pure . VBool $ not b
-        (TPlus, VNum x) -> pure . VNum $ x
-        (TMinus, VNum x) -> pure . VNum $ negate x
-        _ ->
-          throwReport
-            "Type mismatch"
-            [(expr.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
-    (EBinary lhs op rhs) -> do
-      -- Lazy evaluation! No need to worry about short-circuiting.
-      (lhs', rhs') <- (,) <$> eval lhs <*> eval rhs
-      case (op.type_, lhs', rhs') of
-        (TStar2, VNum x, VNum y) -> pure . VNum $ x ** y
-        (TSlash, VNum x, VNum y) -> pure . VNum $ x / y
-        (TStar, VNum x, VNum y) -> pure . VNum $ x * y
-        (TMinus, VNum x, VNum y) -> pure . VNum $ x - y
-        (TPlus, VNum x, VNum y) -> pure . VNum $ x + y
-        (TPlus, VStr x, VStr y) -> pure . VStr $ x <> y
-        (TPlus, VList x, VList y) -> pure . VList $ x <> y
-        (TGtEq, VNum x, VNum y) -> pure . VBool $ x >= y
-        (TGt, VNum x, VNum y) -> pure . VBool $ x > y
-        (TLtEq, VNum x, VNum y) -> pure . VBool $ x <= y
-        (TLt, VNum x, VNum y) -> pure . VBool $ x < y
-        (TBangEq, x, y) -> pure . VBool $ x /= y
-        (TEq2, x, y) -> pure . VBool $ x == y
-        (TAmp2, VBool x, VBool y) -> pure . VBool $ x && y
-        (TPipe2, VBool x, VBool y) -> pure . VBool $ x || y
-        _ ->
-          throwReport
-            "mismatched types"
-            [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
-    -- ECall
-    -- EIndex
-    (EParen x _) -> eval x
-    (EList xs _) -> VList . from <$> eval `traverse` xs
-    (EIfElse _ cond then' else') ->
-      eval cond >>= \case
-        (VBool cond') -> eval $ if cond' then then' else else'
-        cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
-    (EStruct _ kvs) -> VStruct . from <$> traverseBoth eval `traverse` kvs
-    (ELit l) -> pure (from l)
-    -- EVar
-    (EError tok) ->
-      -- TODO: Remove this.
-      throwReport "internal error" [(expr.range, This [i|illegal expression `#{tok}`|])]
-
--- eval (EVar Token {lexeme}) = do
---   def <- get <&> (Map.!? lexeme)
---   def & maybeToEither [i|undefined variable `#{lexeme}`|] & except
+  throwError . (diag `addReport`) $ err Nothing msg markers []
