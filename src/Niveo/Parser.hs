@@ -153,7 +153,7 @@ data Token = Token
 
 makeFieldLabelsNoPrefix ''Token
 
-instance Prelude.Show Token where show = toString . (.lexeme)
+instance Show Token where show = toString . (.lexeme)
 
 instance HasField "range" Token Error.Diagnose.Position where
   getField tk =
@@ -244,12 +244,12 @@ digits = Text.cons <$> (satisfy isDigit <?> "digit") <*> hidden (takeWhileP Noth
 
 data LitType = LNull | LBool | LNum | LStr | LAtom deriving (Eq)
 
-data Lit = Lit {type_ :: LitType, tok :: Token} deriving (Eq)
+data Lit = Lit {type_ :: !LitType, tk :: !Token} deriving (Eq)
 
 instance HasField "range" Lit Error.Diagnose.Position where
-  getField (Lit _ tok) = tok.range
+  getField (Lit _ tk) = tk.range
 
-instance Prelude.Show Lit where
+instance Show Lit where
   show (Lit LNull _) = "null"
   show (Lit LBool b) = toLower <$> toString b.lexeme
   show (Lit LNum n) = toString n.lexeme
@@ -263,7 +263,7 @@ data Expr
   | EIndex {this, idx :: Expr, end :: !Token}
   | EParen {inner :: Expr, end :: !Token}
   | EList {exprs :: [Expr], end :: !Token}
-  | EIfElse {kw :: Token, cond, then', else' :: Expr}
+  | EIfElse {kw :: !Token, cond, then', else' :: Expr}
   | ELet {ident :: !Token, init, val :: Expr}
   | ELambda {kw :: !Token, params :: ![Token], body :: Expr}
   | EStruct {kw :: !Token, kvs :: [(Expr, Expr)]}
@@ -285,9 +285,9 @@ instance HasField "range" Expr Error.Diagnose.Position where
   getField (EStruct kw' _) = kw'.range
   getField (ELit lit) = lit.range
   getField (EVar var) = var.range
-  getField (EError tok) = tok.range
+  getField (EError tk) = tk.range
 
-instance Prelude.Show Expr where
+instance Show Expr where
   show (EUnary op' rhs) = [i|(#{op'} #{rhs})|]
   show (EBinary lhs op' rhs) = [i|(#{op'} #{lhs} #{rhs})|]
   show (ECall callee args _) = show $ Showable callee : Showable `fmap` args
@@ -300,11 +300,11 @@ instance Prelude.Show Expr where
   show (EStruct _ kvs) = [i|(struct #{show kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
   show (EVar var) = var.lexeme & toString
-  show (EError _) = "<?>"
+  show (EError tk) = [i|"<error #{tk}>"|]
 
 newtype Prog = Prog {expr :: Expr}
 
-instance Prelude.Show Prog where
+instance Show Prog where
   show (Prog val) = show val
 
 data Showable = forall a. Show a => Showable a
