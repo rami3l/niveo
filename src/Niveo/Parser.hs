@@ -264,7 +264,7 @@ data Expr
   | EParen {inner :: Expr, end :: !Token}
   | EList {exprs :: [Expr], end :: !Token}
   | EIfElse {kw :: !Token, cond, then', else' :: Expr}
-  | ELet {ident :: !Token, init, val :: Expr}
+  | ELet {ident :: !Token, def, val :: Expr}
   | ELambda {kw :: !Token, params :: ![Token], body :: Expr}
   | EStruct {kw :: !Token, kvs :: [(Expr, Expr)]}
   | ELit !Lit
@@ -295,7 +295,7 @@ instance Show Expr where
   show (EParen inner _) = show inner
   show (EList exprs _) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
   show (EIfElse _ cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
-  show (ELet ident' init' val) = [i|(let ((#{ident'} #{init'})) #{val})|]
+  show (ELet ident' def' val) = [i|(let ((#{ident'} #{def'})) #{val})|]
   show (ELambda _ params body) = [i|(lambda #{show params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
   show (EStruct _ kvs) = [i|(struct #{show kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
