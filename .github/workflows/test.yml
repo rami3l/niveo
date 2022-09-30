@@ -9,22 +9,38 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cabal:
+          - "latest"
+        ghc:
+          - "9.2.4"
 
     steps:
       - uses: actions/checkout@v3
 
       - uses: haskell/actions/setup@v2
+        id: setup-haskell
         with:
-          ghc-version: "9.2.4" # Exact version of ghc to use
-          # cabal-version: 'latest'. Omitted, but defaults to 'latest'
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: ${{ matrix.cabal }}
+
+      # src: https://harry.garrood.me/blog/easy-incremental-haskell-ci-builds-with-ghc-9.4/
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+          key: deps-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('cabal.project.freeze') }}
+          restore-keys: |
+            deps-${{ runner.os }}-${{ matrix.ghc }}-
 
       - name: Cache build
         uses: actions/cache@v3
         with:
           path: |
-            ${{ steps.setup-haskell-cabal.outputs.cabal-store }}
             dist-newstyle
-          key: ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('cabal.project.freeze') }}
+          key: dist-${{ runner.os }}-${{ matrix.ghc }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.ghc }}-
 
