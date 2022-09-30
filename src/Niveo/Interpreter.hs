@@ -30,10 +30,11 @@ import Niveo.Parser
     parse,
     program,
   )
+import Optics (at, (%), (%~), (^.))
 import Optics.TH (makeFieldLabelsNoPrefix)
 import Relude.Unsafe (read)
 import Witch
-import Prelude hiding (Reader, ask, show, toList)
+import Prelude hiding (Reader, ask, local, show, toList, withReader)
 
 data Val
   = -- Native JSON types.
@@ -88,6 +89,8 @@ instance Show Name where
   showList ns = const [i|[#{intercalate ", " $ fmap show ns}]|]
 
 newtype Env = Env {dict :: HashMap Text Val} deriving (Eq, Show)
+
+makeFieldLabelsNoPrefix ''Env
 
 instance Default Env where
   def = Env {dict = HashMap.empty}
@@ -154,21 +157,33 @@ eval (EIfElse _ cond then' else') =
   eval cond >>= \case
     (VBool cond') -> eval $ if cond' then then' else else'
     cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
-eval (ELet _ init' val) = undefined
+eval (ELet ident def' val) = do
+  def'' <- eval def'
+  eval val & local @Context (#env % #dict %~ HashMap.insert ident.lexeme def'')
 eval (ELambda _ params body) = undefined
 eval (EStruct _ kvs) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
   where
-    evalName expr' = do
-      mval <- eval expr'
-      case mval & tryInto @Name of
+    evalName expr' =
+      eval expr' <&> tryInto @Name >>= \case
         Right name -> pure name
-        Left (TryFromException val _) -> throwReport "mismatched types" [(expr'.range, This [i|expected string or atom, found `#{val}`|])]
-eval (ELit l) = pure (from l)
+        Left (TryFromException val _) ->
+          throwReport
+            "mismatched types"
+            [(expr'.range, This [i|expected string or atom, found `#{val}`|])]
+eval (ELit l) = pure $ from l
 eval (EVar tk) =
   ask @Context
-    <&> ((HashMap.!? tk.lexeme) . (.env.dict))
-    >>= maybe (throwReport "undefined variable" [(tk.range, This [i|`#{tk}` not found in this scope|])]) pure
-eval expr@(EError tk) = throwReport "internal error" [(expr.range, This [i|illegal expression `#{tk}`|])]
+    <&> (^. #env % #dict % at tk.lexeme)
+    >>= maybe
+      ( throwReport
+          "undefined variable"
+          [(tk.range, This [i|`#{tk}` not found in this scope|])]
+      )
+      pure
+eval expr@(EError tk) =
+  throwReport
+    "internal error"
+    [(expr.range, This [i|illegal expression `#{tk}`|])]
 
 throwReport ::
   [Error (Diagnostic Text), Reader Context] :>> es =>
