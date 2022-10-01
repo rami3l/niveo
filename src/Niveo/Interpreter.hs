@@ -10,8 +10,8 @@ where
 import Data.Char (toLower)
 import Data.Default (Default (def))
 import Data.HashMap.Strict qualified as HashMap
+import Data.Sequence qualified as Seq
 import Data.String.Interpolate
-import Data.Vector (Vector, toList)
 import Effectful
 import Effectful.Error.Static
 import Effectful.Reader.Static
@@ -32,9 +32,10 @@ import Niveo.Parser
   )
 import Optics (at, (%), (%~), (^.))
 import Optics.TH (makeFieldLabelsNoPrefix)
+import Relude.Extra (traverseBoth)
 import Relude.Unsafe (read)
 import Witch
-import Prelude hiding (Reader, ask, local, show, toList, withReader)
+import Prelude hiding (Reader, ask, local, show, withReader)
 
 data Val
   = -- Native JSON types.
@@ -42,10 +43,10 @@ data Val
   | VBool !Bool
   | VNum !Double
   | VStr !Text
-  | VList (Vector Val)
-  | -- | `VStruct` is encoded as a `Vector` of @(tag, value)@ pairs,
-    -- where the `tag` should be a `VStr` or a `VAtom`.
-    VStruct (Vector (Name, Val))
+  | VList (Seq Val)
+  | -- | `VStruct` is encoded as a list of @(tag, value)@ pairs, and the `tag`s can be identical,
+    -- in which case only the `value` of the *leftmost* `tag` is retrieved.
+    VStruct (Seq (Name, Val))
   | -- Extra types.
     VAtom !Text
   | VLambda {params :: ![Token], body :: Expr, env :: Env}
@@ -69,12 +70,10 @@ instance Show Val where
   show (VLambda params _ _) = [i|<fun(#{intercalate ", " params'})>|] where params' = into . (.lexeme) <$> params
   showList vs = const [i|[#{intercalate ", " $ fmap show vs}]|]
 
--- | If @n@ is an integer, then show it as an integer.
+-- | If `n` is an `Integer`, then show it as an integer.
 -- Otherwise it will be shown normally.
-showRealFrac :: (RealFrac a, Show a) => a -> String
-showRealFrac n =
-  let fl = floor @_ @Integer n
-   in if fl == ceiling n then show fl else show n
+showRealFrac :: Double -> String
+showRealFrac n = n & tryInto @Integer & either (const $ show n) show
 
 data Name = NStr !Text | NAtom !Text deriving (Eq)
 
@@ -128,7 +127,7 @@ eval expr@(EUnary op rhs) = do
         [(expr.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
 eval expr@(EBinary lhs op rhs) = do
   -- Lazy evaluation! No need to worry about short-circuiting.
-  (lhs', rhs') <- (,) <$> eval lhs <*> eval rhs
+  (lhs', rhs') <- traverseBoth eval (lhs, rhs)
   case (op.type_, lhs', rhs') of
     (TStar2, VNum x, VNum y) -> pure . VNum $ x ** y
     (TSlash, VNum x, VNum y) -> pure . VNum $ x / y
@@ -150,7 +149,27 @@ eval expr@(EBinary lhs op rhs) = do
         "mismatched types"
         [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
 eval (ECall callee args _) = undefined
-eval (EIndex this idx _) = undefined
+eval (EIndex this idx _) =
+  let expected (ty :: String) n = throwReport "mismatched types" [(idx.range, This [i|expected #{ty}, found `#{n}`|])]
+      noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
+      findKV keyP kvs = kvs & find (keyP . fst) & maybe (noEntry idx) (pure . snd)
+   in traverseBoth eval (this, idx) >>= \case
+        (VList l, VNum n) ->
+          tryInto @Int n
+            & either
+              (const $ expected "integer" n)
+              ( \n' ->
+                  l Seq.!? n'
+                    & maybe
+                      (throwReport "index out of bounds" [(idx.range, This [i|the len is #{Seq.length l} but the index is `#{n'}`|])])
+                      pure
+              )
+        (VStruct kvs, VStr s) -> kvs & findKV (== NStr s)
+        (VStruct kvs, VAtom s) -> kvs & findKV (== NAtom s)
+        _ ->
+          throwReport
+            "mismatched types"
+            [(idx.range, This [i|could not apply `[]` to `(#{this}, #{idx})`|])]
 eval (EParen x _) = eval x
 eval (EList xs _) = VList . from <$> eval `traverse` xs
 eval (EIfElse _ cond then' else') =
