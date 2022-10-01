@@ -128,8 +128,8 @@ test_call =
         "func (c) (u, r (r(y), i) (n) (g) ()"
           `assertExprError` [i|expecting '\\)'$|],
       testCase "with indices and gets" $
-        [i|breakfast["omelette"].filling[40+2]|]
-          `assertExpr` [i|(@ (@ (@ breakfast "omelette") "filling") (+ 40 2))|],
+        [i|breakfast["omelette"].filling[40+2]::wow|]
+          `assertExpr` [i|(@ (@ (@ (@ breakfast "omelette") "filling") (+ 40 2)) 'wow)|],
       testCase "with chained method calls" $
         "struct{egg: 42}.scramble(3).with(cheddar)"
           `assertExpr` [i|((@ ((@ (struct (("egg" 42))) "scramble") 3) "with") cheddar)|],
