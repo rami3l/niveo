@@ -86,6 +86,7 @@ ops =
       (TComma, ","),
       (TDot, "."),
       (TSemi, ";"),
+      (TColon2, "::"),
       (TColon, ":"),
       (TPlus, "+"),
       (TMinus, "-"),
@@ -123,6 +124,7 @@ data TokenType
   | TDot
   | TSemi
   | TColon
+  | TColon2
   | TPlus
   | TMinus
   | TStar
@@ -383,8 +385,11 @@ call = label "call expression" $
     goArgs c = ECall c <$> (op TLParen *> args) <*> op TRParen
     args = expression `sepBy` hidden (op TComma) <?> "arguments"
     goGet c = do
-      rawField <- op TDot *> ident <?> "field"
-      let field = ELit . Lit LStr $ rawField
+      -- Sugar in indexing when the key string/atom can be parsed as ident.
+      -- `this.prop` => `this["prop"]`
+      -- `this::prop` => `this['prop]`
+      (op', rawField) <- (,) <$> (op TDot <|> op TColon2) <*> (ident <?> "field")
+      let field = ELit . Lit (if op'.type_ == TDot then LStr else LAtom) $ rawField
       pure $ EIndex c field rawField
     goIndex c = EIndex c <$> (op TLBrack *> (expression <?> "index")) <*> op TRBrack
 
