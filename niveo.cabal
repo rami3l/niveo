@@ -71,7 +71,8 @@ library
       UndecidableInstances
   ghc-options: -Wall -Wno-unticked-promoted-constructors
   build-depends:
-      base >=4.7 && <5
+      aeson
+    , base >=4.7 && <5
     , bimap
     , data-default
     , diagnose
@@ -134,7 +135,8 @@ executable niveo-exe
       UndecidableInstances
   ghc-options: -Wall -Wno-unticked-promoted-constructors -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      aeson
+    , base >=4.7 && <5
     , bimap
     , data-default
     , diagnose
@@ -160,6 +162,7 @@ test-suite niveo-test
   main-is: Spec.hs
   other-modules:
       Tests.Common
+      Tests.Interpreter
       Tests.Parser
       Paths_niveo
   autogen-modules:
@@ -204,7 +207,8 @@ test-suite niveo-test
   build-tool-depends:
       tasty-discover:tasty-discover
   build-depends:
-      base >=4.7 && <5
+      aeson
+    , base >=4.7 && <5
     , bimap
     , data-default
     , diagnose
@@ -219,7 +223,6 @@ test-suite niveo-test
     , tasty
     , tasty-hunit
     , tasty-quickcheck
-    , tasty-smallcheck
     , vector
     , witch
   mixins:
