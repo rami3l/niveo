@@ -3,6 +3,7 @@ module Niveo.Interpreter
     Env,
     Context (..),
     interpret,
+    interpret',
     eval,
   )
 where
@@ -35,7 +36,7 @@ import Optics.TH (makeFieldLabelsNoPrefix)
 import Relude.Extra (traverseBoth)
 import Relude.Unsafe (read)
 import Witch
-import Prelude hiding (Reader, ask, local, show, withReader)
+import Prelude hiding (Reader, ask, local, runReader, show, withReader)
 
 data Val
   = -- Native JSON types.
@@ -64,7 +65,7 @@ instance Show Val where
   show (VBool b) = toLower <$> show b
   show (VNum n) = showRealFrac n
   show (VStr s) = show s
-  show (VList vs) = show vs
+  show (VList vs) = [i|[#{intercalate ", " vs'}]|] where vs' = vs <&> show & toList
   show (VStruct kvs) = [i|struct{#{intercalate ", " kvs'}}|] where kvs' = kvs <&> (\(k, v) -> [i|#{k} = #{v}|]) & toList
   show (VAtom s) = '\'' : toString s
   show (VLambda params _ _) = [i|<fun(#{intercalate ", " params'})>|] where params' = into . (.lexeme) <$> params
@@ -103,9 +104,10 @@ data Context = Context
 
 makeFieldLabelsNoPrefix ''Context
 
-interpret ::
-  [Error (Diagnostic Text), Reader Context] ~ es =>
-  Eff es Val
+interpret' :: Context -> Either (Diagnostic Text) Val
+interpret' ctx = runPureEff . runReader ctx . runErrorNoCallStack $ interpret
+
+interpret :: Eff [Error (Diagnostic Text), Reader Context] Val
 interpret = do
   ctx <- ask @Context
   prog <- parse program ctx.fin ctx.src & either throwError pure

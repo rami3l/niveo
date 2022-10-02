@@ -67,6 +67,7 @@ dependencies:
     mixin:
       - (Relude as Prelude)
       - ""
+  - aeson
   - bimap
   - data-default
   - diagnose
@@ -113,6 +114,5 @@ tests:
       - tasty
       - tasty-hunit
       - tasty-quickcheck
-      - tasty-smallcheck
     build-tools:
       - tasty-discover:tasty-discover

@@ -432,7 +432,7 @@ sync :: Parser Token -> Parser Token
 sync = (snd <$>) . (anySingle `manyTill_`)
 
 program :: Parser Prog
-program = expression <* eof <&> Prog <?> "program"
+program = between space space expression <* eof <&> Prog <?> "program"
 
 -- | A version of `Megaparsec.parse` supercharged by `diagnose` errors.
 parse ::
