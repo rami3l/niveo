@@ -150,7 +150,12 @@ eval expr@(EBinary lhs op rhs) = do
       throwReport
         "mismatched types"
         [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
-eval (ECall callee args _) = undefined
+eval (ECall callee args _) =
+  (callee, args) & bitraverse eval (eval `traverse`) >>= \case
+    (VLambda params body env, args') ->
+      let localEnv = env & #dict %~ (HashMap.union . HashMap.fromList $ (params <&> (.lexeme)) `zip` args')
+       in eval body & local @Context (#env %~ const localEnv)
+    _ -> throwReport "invalid call" [(callee.range, This [i|`#{callee}` is not callable|])]
 eval (EIndex this idx _) =
   let expected (ty :: String) n = throwReport "mismatched types" [(idx.range, This [i|expected #{ty}, found `#{n}`|])]
       noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
@@ -181,7 +186,7 @@ eval (EIfElse _ cond then' else') =
 eval (ELet ident def' val) = do
   def'' <- eval def'
   eval val & local @Context (#env % #dict %~ HashMap.insert ident.lexeme def'')
-eval (ELambda _ params body) = undefined
+eval (ELambda _ params body) = VLambda params body . (.env) <$> ask @Context
 eval (EStruct _ kvs) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
   where
     evalName expr' =
