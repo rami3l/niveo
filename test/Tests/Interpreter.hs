@@ -106,3 +106,18 @@ test_bool =
         |]
           `assertExpr` "true"
     ]
+
+test_call :: TestTree
+test_call =
+  testGroup
+    "Should evaluate function calls"
+    [ testCase "with simple call" $
+        "let abs = fun(a) {if (a >= 0) a else -a}; abs(-4) * 10 + abs(2)" `assertExpr` "42",
+      testCase "with inline call, captures" $
+        "let one = 1; fun(a) {a + one}(41)" `assertExpr` "42",
+      testCase "with complex call" $
+        "let add_c = fun(a) {fun(b) {a + b}}; add_c(40)(2)" `assertExpr` "42"
+        -- TODO: Support recursive functions.
+        -- ,testCase "with recursive definition" $
+        --   "let fact = fun(a) {if (a <= 1) a else a * fact(a-1)}; fact(5)" `assertExpr` "120"
+    ]

@@ -3,6 +3,7 @@
     "Bimap",
     "bitraverse",
     "Brack",
+    "Effectful",
     "mempty",
     "Niveo",
     "Paren",
