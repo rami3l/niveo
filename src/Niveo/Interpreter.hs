@@ -8,6 +8,7 @@ module Niveo.Interpreter
   )
 where
 
+import Control.Monad.Fix (mfix)
 import Data.Char (toLower)
 import Data.Default (Default (def))
 import Data.HashMap.Strict qualified as HashMap
@@ -55,7 +56,7 @@ data Val
 
 instance From Lit Val where
   from (Lit LNull _) = VNull
-  from (Lit LBool b) = VBool $ b.lexeme == "true"
+  from (Lit LBool b) = VBool $ b.type_ == TTrue
   from (Lit LNum x) = VNum . read . into $ x.lexeme
   from (Lit LStr s) = VStr s.lexeme
   from (Lit LAtom s) = VAtom s.lexeme
@@ -183,9 +184,14 @@ eval (EIfElse _ cond then' else') =
   eval cond >>= \case
     (VBool cond') -> eval $ if cond' then then' else else'
     cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
-eval (ELet ident def' val) = do
-  def'' <- eval def'
-  eval val & local @Context (#env % #dict %~ HashMap.insert ident.lexeme def'')
+eval (ELet kw ident def' val) = do
+  let define = (#env % #dict %~) . HashMap.insert ident.lexeme
+  def'' <-
+    -- Following the French CAML tradition here: https://stackoverflow.com/a/1891573
+    if kw.type_ == TLetrec
+      then mfix \def'' -> eval def' & local @Context (define def'')
+      else eval def'
+  eval val & local @Context (define def'')
 eval (ELambda _ params body) = VLambda params body . (.env) <$> ask @Context
 eval (EStruct _ kvs) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
   where

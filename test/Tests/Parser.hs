@@ -31,7 +31,7 @@ test_arithmetic =
         "-(-1+2 / 3- 4 *5+ (6/ 7)" `assertExprError` [i|expecting '\\)'$|],
       testCase "with binary misused as unary" $
         "*1" `assertExprError` "expecting expression$",
-      testCase "with nested `let`" $
+      testCase "with nested `let` and `letrec`" $
         [__i|
           let a =
             let b =
@@ -39,10 +39,10 @@ test_arithmetic =
                 let d = e;
                 d + 1;
             b;
-          let f = a + g;
+          letrec f = a + g;
           f
         |]
-          `assertExpr` "(let ((a (let ((b (+ c (let ((d e)) (+ d 1))))) b))) (let ((f (+ a g))) f))",
+          `assertExpr` "(let ((a (let ((b (+ c (let ((d e)) (+ d 1))))) b))) (letrec ((f (+ a g))) f))",
       testCase "with `if-else`, `let`, blocks" $
         [__i|
           a + {

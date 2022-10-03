@@ -116,8 +116,7 @@ test_call =
       testCase "with inline call, captures" $
         "let one = 1; fun(a) {a + one}(41)" `assertExpr` "42",
       testCase "with complex call" $
-        "let add_c = fun(a) {fun(b) {a + b}}; add_c(40)(2)" `assertExpr` "42"
-        -- TODO: Support recursive functions.
-        -- ,testCase "with recursive definition" $
-        --   "let fact = fun(a) {if (a <= 1) a else a * fact(a-1)}; fact(5)" `assertExpr` "120"
+        "let add_c = fun(a) {fun(b) {a + b}}; add_c(40)(2)" `assertExpr` "42",
+      testCase "with recursive definition" $
+        "letrec fact = fun(a) {if (a <= 1) a else a * fact(a-1)}; fact(5)" `assertExpr` "120"
     ]
