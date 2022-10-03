@@ -70,6 +70,7 @@ kws =
       (TStruct, "struct"),
       (TIf, "if"),
       (TElse, "else"),
+      (TLetrec, "letrec"),
       (TLet, "let"),
       (TFun, "fun")
     ]
@@ -113,6 +114,7 @@ data TokenType
   | TIf
   | TElse
   | TLet
+  | TLetrec
   | TFun
   | TLParen
   | TRParen
@@ -266,7 +268,7 @@ data Expr
   | EParen {inner :: Expr, end :: !Token}
   | EList {exprs :: [Expr], end :: !Token}
   | EIfElse {kw :: !Token, cond, then', else' :: Expr}
-  | ELet {ident :: !Token, def, val :: Expr}
+  | ELet {kw, ident :: !Token, def, val :: Expr}
   | ELambda {kw :: !Token, params :: ![Token], body :: Expr}
   | EStruct {kw :: !Token, kvs :: [(Expr, Expr)]}
   | ELit !Lit
@@ -282,7 +284,7 @@ instance HasField "range" Expr Error.Diagnose.Position where
   getField (EParen _ end') = end'.range
   getField (EList _ end') = end'.range
   getField (EIfElse kw' _ _ _) = kw'.range
-  getField (ELet ident' _ _) = ident'.range
+  getField (ELet _ ident' _ _) = ident'.range
   getField (ELambda kw' _ _) = kw'.range
   getField (EStruct kw' _) = kw'.range
   getField (ELit lit) = lit.range
@@ -297,7 +299,7 @@ instance Show Expr where
   show (EParen inner _) = show inner
   show (EList exprs _) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
   show (EIfElse _ cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
-  show (ELet ident' def' val) = [i|(let ((#{ident'} #{def'})) #{val})|]
+  show (ELet kw' ident' def' val) = [i|(#{kw'} ((#{ident'} #{def'})) #{val})|]
   show (ELambda _ params body) = [i|(lambda #{show params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
   show (EStruct _ kvs) = [i|(struct #{show kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
@@ -341,7 +343,8 @@ primary =
       block,
       -- TODO: Remove EBlock and add ELet in the reference manual.
       ELet
-        <$> (kw TLet *> ident)
+        <$> (kw TLetrec <|> kw TLet)
+        <*> ident
         <*> (op TEq *> expression)
         <*> (op TSemi *> expression),
       EList <$> (op TLBrack *> (expression `sepEndBy` op TComma)) <*> op TRBrack,
