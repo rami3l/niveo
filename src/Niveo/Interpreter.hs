@@ -8,10 +8,11 @@ module Niveo.Interpreter
   )
 where
 
+import Control.Monad (foldM)
 import Control.Monad.Fix (mfix)
 import Data.Char (toLower)
 import Data.Default (Default (def))
-import Data.HashMap.Strict qualified as HashMap
+import Data.HashMap.Strict qualified as Map
 import Data.Sequence qualified as Seq
 import Data.String.Interpolate
 import Effectful
@@ -37,7 +38,7 @@ import Optics.TH (makeFieldLabelsNoPrefix)
 import Relude.Extra (traverseBoth)
 import Relude.Unsafe (read)
 import Witch
-import Prelude hiding (Reader, ask, local, runReader, show, withReader)
+import Prelude hiding (Reader, ask, asks, local, runReader, show, withReader)
 
 data Val
   = -- Native JSON types.
@@ -94,7 +95,7 @@ newtype Env = Env {dict :: HashMap Text Val} deriving (Eq, Show)
 makeFieldLabelsNoPrefix ''Env
 
 instance Default Env where
-  def = Env {dict = HashMap.empty}
+  def = Env {dict = Map.empty}
 
 data Context = Context
   { env :: Env,
@@ -154,7 +155,7 @@ eval expr@(EBinary lhs op rhs) = do
 eval (ECall callee args _) =
   (callee, args) & bitraverse eval (eval `traverse`) >>= \case
     (VLambda params body env, args') ->
-      let localEnv = env & #dict %~ (HashMap.union . HashMap.fromList $ (params <&> (.lexeme)) `zip` args')
+      let localEnv = env & #dict %~ (Map.union . Map.fromList $ (params <&> (.lexeme)) `zip` args')
        in eval body & local @Context (#env %~ const localEnv)
     _ -> throwReport "invalid call" [(callee.range, This [i|`#{callee}` is not callable|])]
 eval (EIndex this idx _) =
@@ -184,17 +185,26 @@ eval (EIfElse _ cond then' else') =
   eval cond >>= \case
     (VBool cond') -> eval $ if cond' then then' else else'
     cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
-eval (ELet kw defs val) = do
-  let define (defs' :: NonEmpty (Token, Val)) =
-        let defs'' = HashMap.fromList $ first (.lexeme) <$> into @[(Token, Val)] defs'
-         in #env % #dict %~ HashMap.union defs''
-  defs' <-
+eval (ELet kw defs val) =
+  do
     -- Following the French CAML tradition here: https://stackoverflow.com/a/1891573
     if kw.type_ == TLetrec
-      then mfix \defs' -> defs & traverse \(ident', def') -> eval def' & local @Context (define defs') <&> (ident',)
-      else defs & traverse \(ident', def') -> eval def' <&> (ident',)
-  eval val & local @Context (define defs')
-eval (ELambda _ params body) = VLambda params body . (.env) <$> ask @Context
+      then do
+        let define (defs' :: NonEmpty (Token, Val)) =
+              let defs'' = Map.fromList $ first (.lexeme) <$> into @[(Token, Val)] defs'
+               in #env % #dict %~ Map.union defs''
+        defs' <- mfix \defs' ->
+          defs & traverse \(ident', def') ->
+            eval def' & local @Context (define defs') <&> (ident',)
+        eval val & local @Context (define defs')
+      else do
+        ctx <- ask @Context
+        let ctxUpdate ctx' (ident', def') = do
+              def'' <- eval def' & runReader ctx'
+              ctx' & #env % #dict %~ Map.insert ident'.lexeme def'' & pure
+        ctx' <- defs & foldM ctxUpdate ctx
+        eval val & runReader ctx'
+eval (ELambda _ params body) = asks @Context $ VLambda params body . (.env)
 eval (EStruct _ kvs) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
   where
     evalName expr' =

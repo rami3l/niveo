@@ -98,10 +98,7 @@ test_bool =
         "  -(-1+2) >=3 ==   ! !(4 <5+ (6/ 7))   " `assertExpr` "false",
       testCase "with `&&`, `||` and `!`" $
         [__i|
-          let foo = 'foo;
-          let bar = true;
-          let a = !bar;
-          let b = 3;
+          let foo = 'foo, bar = true, a = !bar, b = 3;
           foo == null || !!bar && a != (b == 3)
         |]
           `assertExpr` "true"
@@ -121,10 +118,11 @@ test_call =
         "letrec fact = fun(a) {if (a <= 1) 1 else a * fact(a-1)}; fact(5)" `assertExpr` "120",
       testCase "with mutual recursive definitions" $
         [__i|
+          let n = 10;
           letrec
             even = fun(x) {if (x == 0) true else odd(x-1)},
             odd = fun(x) {if (x == 0) false else even(x-1)};
-          even(10)
+          even(n)
         |]
           `assertExpr` "true"
     ]
