@@ -71,7 +71,7 @@ instance Show Val where
   show (VStruct kvs) = [i|struct{#{intercalate ", " kvs'}}|] where kvs' = kvs <&> (\(k, v) -> [i|#{k} = #{v}|]) & toList
   show (VAtom s) = '\'' : toString s
   show (VLambda params _ _) = [i|<fun(#{intercalate ", " params'})>|] where params' = into . (.lexeme) <$> params
-  showList vs = const [i|[#{intercalate ", " $ fmap show vs}]|]
+  showList vs = (<>) [i|[#{intercalate ", " $ fmap show vs}]|]
 
 -- | If `n` is an `Integer`, then show it as an integer.
 -- Otherwise it will be shown normally.
@@ -88,7 +88,7 @@ instance TryFrom Val Name where
 instance Show Name where
   show (NStr s) = show s
   show (NAtom s) = '\'' : toString s
-  showList ns = const [i|[#{intercalate ", " $ fmap show ns}]|]
+  showList ns = (<>) [i|[#{intercalate ", " $ fmap show ns}]|]
 
 newtype Env = Env {dict :: HashMap Text Val} deriving (Eq, Show)
 

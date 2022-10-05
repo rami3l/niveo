@@ -301,9 +301,9 @@ instance Show Expr where
   show (EParen inner _) = show inner
   show (EList exprs _) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
   show (EIfElse _ cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
-  show (ELet kw' defs val) = [i|(#{kw'} #{show defs'} #{val})|] where defs' = toList defs <&> (\(ident', def') -> Showable [Showable ident', Showable def'])
-  show (ELambda _ params body) = [i|(lambda #{show params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
-  show (EStruct _ kvs) = [i|(struct #{show kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
+  show (ELet kw' defs val) = [i|(#{kw'} #{defs'} #{val})|] where defs' = toList defs <&> (\(ident', def') -> Showable [Showable ident', Showable def'])
+  show (ELambda _ params body) = [i|(lambda #{params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
+  show (EStruct _ kvs) = [i|(struct #{kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
   show (EVar var) = var.lexeme & toString
   show (EError tk) = [i|"<error #{tk}>"|]
@@ -317,12 +317,15 @@ data Showable = forall a. Show a => Showable a
 
 instance Show Showable where
   show (Showable a) = show a
-  showList [] = const "'()"
-  showList as = const [i|(#{intercalate " " $ fmap show as})|]
 
-data ToString' = forall a. ToString a => ToString' a
+  -- For an explanation of the following `showList` implementation,
+  -- see https://stackoverflow.com/a/9198124
+  showList [] = (<>) "'()"
+  showList as = (<>) [i|(#{intercalate " " $ fmap show as})|]
 
-instance Show ToString' where
+data Chars = forall a. ToString a => ToString' a
+
+instance Show Chars where
   show (ToString' a) = toString a
 
 -- Expressions:
