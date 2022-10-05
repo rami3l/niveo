@@ -269,7 +269,7 @@ data Expr
   | EIndex {this, idx :: Expr, end :: !Token}
   | EParen {inner :: Expr, end :: !Token}
   | EList {exprs :: [Expr], end :: !Token}
-  | EIfElse {kw :: !Token, cond, then', else' :: Expr}
+  | EIfElse {kw :: !Token, cond, then_, else_ :: Expr}
   | ELet {kw :: !Token, defs :: NonEmpty (Token, Expr), val :: Expr}
   | ELambda {kw :: !Token, params :: ![Token], body :: Expr}
   | EStruct {kw :: !Token, kvs :: [(Expr, Expr)]}
@@ -300,7 +300,7 @@ instance Show Expr where
   show (EIndex this idx _) = [i|(@ #{this} #{idx})|]
   show (EParen inner _) = show inner
   show (EList exprs _) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
-  show (EIfElse _ cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
+  show (EIfElse _ cond then_ else_) = [i|(if #{cond} #{then_} #{else_})|]
   show (ELet kw' defs val) = [i|(#{kw'} #{defs'} #{val})|] where defs' = toList defs <&> (\(ident', def') -> Showable [Showable ident', Showable def'])
   show (ELambda _ params body) = [i|(lambda #{params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
   show (EStruct _ kvs) = [i|(struct #{kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
@@ -346,7 +346,6 @@ primary =
       strLit <&> ELit . Lit LStr,
       EParen <$> (op TLParen *> expression) <*> op TRParen,
       block,
-      -- TODO: Remove EBlock and add ELet in the reference manual.
       ELet
         <$> (kw TLetrec <|> kw TLet)
         <*> (NonEmpty.fromList <$> ((,) <$> ident <*> (op TEq *> expression)) `sepBy1` op TComma)
@@ -365,16 +364,22 @@ primary =
     <?> "primary expression"
   where
     structKV =
-      ( do
-          -- Sugar when the key string can be parsed as ident.
+      choice
+        [ -- Sugar when the key string can be parsed as ident.
           -- `foo: bar` => `"foo" = bar`
-          -- `foo` => `"foo" = foo` (Named field punning)
-          field <- ident <?> "field"
-          let fieldStr = ELit . Lit LStr $ field
-          value <- optional (op TColon *> (expression <?> "value"))
-          pure (fieldStr, value & fromMaybe (EVar field))
-      )
-        <|> (,) <$> (expression <?> "field") <*> (op TEq *> (expression <?> "value"))
+          -- `foo` => `"foo" = foo` (named field punning)
+          punnedLit ident LStr $ op TColon,
+          -- Sugar when the key is an atom and the field is omitted.
+          -- `'foo` => `'foo = foo` (named field punning)
+          punnedLit atom LAtom $ op TEq,
+          (,) <$> (expression <?> "field") <*> (op TEq *> (expression <?> "value"))
+        ]
+      where
+        punnedLit parser litTy sep = do
+          field <- parser <?> "field"
+          let fieldLit = ELit . Lit litTy $ field
+          value <- optional $ sep *> (expression <?> "value")
+          pure (fieldLit, value & fromMaybe (EVar field))
 
 toInfixLParser :: Parser Expr -> (Expr -> Parser Expr) -> Parser Expr
 toInfixLParser car cdr = do

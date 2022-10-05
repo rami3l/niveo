@@ -70,10 +70,11 @@ test_coll =
         [__i|
           struct{
             foo,
+            'bar,
             baz: [1, 2.3, "4.56"], // <- A list!
           }
         |]
-          `assertExpr` [i|(struct (("foo" foo) ("baz" (list 1 2.3 "4.56"))))|]
+          `assertExpr` [i|(struct (("foo" foo) ('bar bar) ("baz" (list 1 2.3 "4.56"))))|]
     ]
 
 test_fun :: TestTree

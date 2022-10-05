@@ -74,12 +74,14 @@ test_coll =
       testCase "with struct, trailing comma, key shorthand, list" $
         [__i|
           let foo = '__some_foo__;
+          let bar = 42;
           struct{
             foo,
+            'bar,
             baz: [1, 2.3],
           }
         |]
-          `assertExpr` [i|struct{"foo" = '__some_foo__, "baz" = [1, 2.3]}|],
+          `assertExpr` [i|struct{"foo" = '__some_foo__, 'bar = 42, "baz" = [1, 2.3]}|],
       testCase "with struct accessors" $
         [__i|
           let s = struct{one: "Night", 'blinding = "Lights"};

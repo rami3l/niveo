@@ -181,9 +181,9 @@ eval (EIndex this idx _) =
             [(idx.range, This [i|could not apply `[]` to `(#{this}, #{idx})`|])]
 eval (EParen x _) = eval x
 eval (EList xs _) = VList . from <$> eval `traverse` xs
-eval (EIfElse _ cond then' else') =
+eval (EIfElse _ cond then_ else_) =
   eval cond >>= \case
-    (VBool cond') -> eval $ if cond' then then' else else'
+    (VBool cond') -> eval $ if cond' then then_ else else_
     cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
 eval (ELet kw defs val) =
   do
