@@ -184,14 +184,16 @@ eval (EIfElse _ cond then' else') =
   eval cond >>= \case
     (VBool cond') -> eval $ if cond' then then' else else'
     cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
-eval (ELet kw ident def' val) = do
-  let define = (#env % #dict %~) . HashMap.insert ident.lexeme
-  def'' <-
+eval (ELet kw defs val) = do
+  let define (defs' :: NonEmpty (Token, Val)) =
+        let defs'' = HashMap.fromList $ first (.lexeme) <$> into @[(Token, Val)] defs'
+         in #env % #dict %~ HashMap.union defs''
+  defs' <-
     -- Following the French CAML tradition here: https://stackoverflow.com/a/1891573
     if kw.type_ == TLetrec
-      then mfix \def'' -> eval def' & local @Context (define def'')
-      else eval def'
-  eval val & local @Context (define def'')
+      then mfix \defs' -> defs & traverse \(ident', def') -> eval def' & local @Context (define defs') <&> (ident',)
+      else defs & traverse \(ident', def') -> eval def' <&> (ident',)
+  eval val & local @Context (define defs')
 eval (ELambda _ params body) = VLambda params body . (.env) <$> ask @Context
 eval (EStruct _ kvs) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
   where

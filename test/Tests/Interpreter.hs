@@ -118,5 +118,13 @@ test_call =
       testCase "with complex call" $
         "let add_c = fun(a) {fun(b) {a + b}}; add_c(40)(2)" `assertExpr` "42",
       testCase "with recursive definition" $
-        "letrec fact = fun(a) {if (a <= 1) a else a * fact(a-1)}; fact(5)" `assertExpr` "120"
+        "letrec fact = fun(a) {if (a <= 1) 1 else a * fact(a-1)}; fact(5)" `assertExpr` "120",
+      testCase "with mutual recursive definitions" $
+        [__i|
+          letrec
+            even = fun(x) {if (x == 0) true else odd(x-1)},
+            odd = fun(x) {if (x == 0) false else even(x-1)};
+          even(10)
+        |]
+          `assertExpr` "true"
     ]

@@ -18,6 +18,7 @@ import Data.Bimap (Bimap)
 import Data.Bimap qualified as Bimap
 import Data.Char (isDigit, toLower)
 import Data.Either.Extra (mapLeft)
+import Data.List.NonEmpty.Extra qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.String.Interpolate
 import Data.Text qualified as Text
@@ -45,6 +46,7 @@ import Text.Megaparsec
     registerParseError,
     satisfy,
     sepBy,
+    sepBy1,
     sepEndBy,
     single,
     (<?>),
@@ -268,7 +270,7 @@ data Expr
   | EParen {inner :: Expr, end :: !Token}
   | EList {exprs :: [Expr], end :: !Token}
   | EIfElse {kw :: !Token, cond, then', else' :: Expr}
-  | ELet {kw, ident :: !Token, def, val :: Expr}
+  | ELet {kw :: !Token, defs :: NonEmpty (Token, Expr), val :: Expr}
   | ELambda {kw :: !Token, params :: ![Token], body :: Expr}
   | EStruct {kw :: !Token, kvs :: [(Expr, Expr)]}
   | ELit !Lit
@@ -284,7 +286,7 @@ instance HasField "range" Expr Error.Diagnose.Position where
   getField (EParen _ end') = end'.range
   getField (EList _ end') = end'.range
   getField (EIfElse kw' _ _ _) = kw'.range
-  getField (ELet _ ident' _ _) = ident'.range
+  getField (ELet kw' _ _) = kw'.range
   getField (ELambda kw' _ _) = kw'.range
   getField (EStruct kw' _) = kw'.range
   getField (ELit lit) = lit.range
@@ -299,7 +301,7 @@ instance Show Expr where
   show (EParen inner _) = show inner
   show (EList exprs _) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
   show (EIfElse _ cond then' else') = [i|(if #{cond} #{then'} #{else'})|]
-  show (ELet kw' ident' def' val) = [i|(#{kw'} ((#{ident'} #{def'})) #{val})|]
+  show (ELet kw' defs val) = [i|(#{kw'} #{show defs'} #{val})|] where defs' = toList defs <&> (\(ident', def') -> Showable [Showable ident', Showable def'])
   show (ELambda _ params body) = [i|(lambda #{show params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
   show (EStruct _ kvs) = [i|(struct #{show kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
@@ -344,8 +346,7 @@ primary =
       -- TODO: Remove EBlock and add ELet in the reference manual.
       ELet
         <$> (kw TLetrec <|> kw TLet)
-        <*> ident
-        <*> (op TEq *> expression)
+        <*> (NonEmpty.fromList <$> ((,) <$> ident <*> (op TEq *> expression)) `sepBy1` op TComma)
         <*> (op TSemi *> expression),
       EList <$> (op TLBrack *> (expression `sepEndBy` op TComma)) <*> op TRBrack,
       EStruct <$> kw TStruct <*> between (op TLBrace) (op TRBrace) (structKV `sepEndBy` op TComma),
