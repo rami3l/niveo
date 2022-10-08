@@ -12,7 +12,7 @@ import Control.Monad (foldM)
 import Control.Monad.Fix (mfix)
 import Data.Char (toLower)
 import Data.Default (Default (def))
-import Data.HashMap.Strict qualified as Map
+import Data.Map.Strict qualified as Map
 import Data.Sequence qualified as Seq
 import Data.String.Interpolate
 import Effectful
@@ -33,9 +33,9 @@ import Niveo.Parser
     parse,
     program,
   )
-import Optics (at, (%), (%~), (^.))
+import Optics (at, (%), (%~), (.~), (^.))
 import Optics.TH (makeFieldLabelsNoPrefix)
-import Relude.Extra (traverseBoth)
+import Relude.Extra (toFst, traverseBoth)
 import Relude.Unsafe (read)
 import Witch
 import Prelude hiding (Reader, ask, asks, local, runReader, show, withReader)
@@ -53,6 +53,7 @@ data Val
   | -- Extra types.
     VAtom !Text
   | VLambda {params :: ![Token], body :: Expr, env :: Env}
+  | VHostFun HostFun
   deriving (Eq)
 
 instance From Lit Val where
@@ -71,6 +72,7 @@ instance Show Val where
   show (VStruct kvs) = [i|struct{#{intercalate ", " kvs'}}|] where kvs' = kvs <&> (\(k, v) -> [i|#{k} = #{v}|]) & toList
   show (VAtom s) = '\'' : toString s
   show (VLambda params _ _) = [i|<fun(#{intercalate ", " params'})>|] where params' = into . (.lexeme) <$> params
+  show (VHostFun (HostFun name _)) = [i|<extern fun #{name}>|]
   showList vs = (<>) [i|[#{intercalate ", " $ fmap show vs}]|]
 
 -- | If `n` is an `Integer`, then show it as an integer.
@@ -90,12 +92,20 @@ instance Show Name where
   show (NAtom s) = '\'' : toString s
   showList ns = (<>) [i|[#{intercalate ", " $ fmap show ns}]|]
 
-newtype Env = Env {dict :: HashMap Text Val} deriving (Eq, Show)
-
-makeFieldLabelsNoPrefix ''Env
+newtype Env = Env {dict :: Map Text Val} deriving (Eq, Show)
 
 instance Default Env where
-  def = Env {dict = Map.empty}
+  def = Env {dict}
+    where
+      dict =
+        Map.fromList $
+          second VHostFun . toFst (.name)
+            <$> [HostFun "import" import_]
+
+import_ :: RawHostFun
+import_ [VStr path] = undefined
+-- Atom for outside of prelude.
+import_ _ = undefined
 
 data Context = Context
   { env :: Env,
@@ -104,21 +114,31 @@ data Context = Context
   }
   deriving (Generic)
 
+type EvalEffs = [Error (Diagnostic Text), Reader Context]
+
+type RawHostFun = [Val] -> Eff EvalEffs Val
+
+data HostFun = HostFun
+  { name :: !Text,
+    fun :: RawHostFun
+  }
+
+instance Eq HostFun where
+  hf == hf' = hf.name == hf'.name
+
+makeFieldLabelsNoPrefix ''Env
 makeFieldLabelsNoPrefix ''Context
 
 interpret' :: Context -> Either (Diagnostic Text) Val
 interpret' ctx = runPureEff . runReader ctx . runErrorNoCallStack $ interpret
 
-interpret :: Eff [Error (Diagnostic Text), Reader Context] Val
+interpret :: Eff EvalEffs Val
 interpret = do
   ctx <- ask @Context
   prog <- parse program ctx.fin ctx.src & either throwError pure
   eval prog.expr
 
-eval ::
-  [Error (Diagnostic Text), Reader Context] :>> es =>
-  Expr ->
-  Eff es Val
+eval :: EvalEffs :>> es => Expr -> Eff es Val
 eval expr@(EUnary op rhs) = do
   rhs' <- eval rhs
   case (op.type_, rhs') of
@@ -156,7 +176,8 @@ eval (ECall callee args _) =
   (callee, args) & bitraverse eval (eval `traverse`) >>= \case
     (VLambda params body env, args') ->
       let localEnv = env & #dict %~ (Map.union . Map.fromList $ (params <&> (.lexeme)) `zip` args')
-       in eval body & local @Context (#env %~ const localEnv)
+       in eval body & local @Context (#env .~ localEnv)
+    (VHostFun hf, args') -> hf.fun args' & inject
     _ -> throwReport "invalid call" [(callee.range, This [i|`#{callee}` is not callable|])]
 eval (EIndex this idx _) =
   let expected (ty :: String) n = throwReport "mismatched types" [(idx.range, This [i|expected #{ty}, found `#{n}`|])]

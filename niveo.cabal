@@ -28,6 +28,7 @@ library
       Niveo
       Niveo.Instances
       Niveo.Interpreter
+      Niveo.Interpreter.FileSystem
       Niveo.Parser
   other-modules:
       Paths_niveo
@@ -69,14 +70,17 @@ library
       TypeFamilies
       TypeOperators
       UndecidableInstances
-  ghc-options: -Wall -Wno-unticked-promoted-constructors
+  ghc-options: -Wall -Wno-unticked-promoted-constructors -fplugin=Effectful.Plugin
   build-depends:
       aeson
     , base >=4.7 && <5
     , bimap
     , data-default
     , diagnose
-    , effectful
+    , effectful-core
+    , effectful-plugin
+    , effectful-th
+    , exceptions
     , extra
     , megaparsec
     , optics
@@ -133,14 +137,17 @@ executable niveo-exe
       TypeFamilies
       TypeOperators
       UndecidableInstances
-  ghc-options: -Wall -Wno-unticked-promoted-constructors -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-unticked-promoted-constructors -fplugin=Effectful.Plugin -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
     , base >=4.7 && <5
     , bimap
     , data-default
     , diagnose
-    , effectful
+    , effectful-core
+    , effectful-plugin
+    , effectful-th
+    , exceptions
     , extra
     , haskeline
     , megaparsec
@@ -203,7 +210,7 @@ test-suite niveo-test
       TypeFamilies
       TypeOperators
       UndecidableInstances
-  ghc-options: -Wall -Wno-unticked-promoted-constructors -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-unticked-promoted-constructors -fplugin=Effectful.Plugin -threaded -rtsopts -with-rtsopts=-N
   build-tool-depends:
       tasty-discover:tasty-discover
   build-depends:
@@ -212,7 +219,10 @@ test-suite niveo-test
     , bimap
     , data-default
     , diagnose
-    , effectful
+    , effectful-core
+    , effectful-plugin
+    , effectful-th
+    , exceptions
     , extra
     , megaparsec
     , niveo
