@@ -71,7 +71,10 @@ dependencies:
   - bimap
   - data-default
   - diagnose
-  - effectful
+  - effectful-core
+  - effectful-plugin
+  - effectful-th
+  - exceptions
   - extra
   - megaparsec
   - optics
@@ -83,6 +86,8 @@ ghc-options:
   - -Wall
   # https://gitlab.haskell.org/ghc/ghc/-/issues/20531
   - -Wno-unticked-promoted-constructors
+  # https://hackage.haskell.org/package/effectful-plugin
+  - -fplugin=Effectful.Plugin
 
 library:
   source-dirs: src
