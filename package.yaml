@@ -45,6 +45,7 @@ default-extensions:
   - OverloadedRecordDot
   # - OverloadedRecordUpdate
   - OverloadedStrings
+  - PartialTypeSignatures
   - PatternSynonyms
   - PolyKinds
   - QuasiQuotes

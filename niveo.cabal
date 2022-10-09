@@ -58,6 +58,7 @@ library
       OverloadedLabels
       OverloadedRecordDot
       OverloadedStrings
+      PartialTypeSignatures
       PatternSynonyms
       PolyKinds
       QuasiQuotes
@@ -125,6 +126,7 @@ executable niveo-exe
       OverloadedLabels
       OverloadedRecordDot
       OverloadedStrings
+      PartialTypeSignatures
       PatternSynonyms
       PolyKinds
       QuasiQuotes
@@ -198,6 +200,7 @@ test-suite niveo-test
       OverloadedLabels
       OverloadedRecordDot
       OverloadedStrings
+      PartialTypeSignatures
       PatternSynonyms
       PolyKinds
       QuasiQuotes

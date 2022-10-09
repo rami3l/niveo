@@ -33,12 +33,12 @@ data FileSystem :: Effect where
 makeEffect ''FileSystem
 
 --- | File system error.
-newtype FsError = FsError String
+newtype FsError = FsError Text
 
 -- Handlers
 
 runFileSystemIO ::
-  (IOE :> es, Error FsError :> es) =>
+  [IOE, Error FsError] :>> es =>
   Eff (FileSystem : es) a ->
   Eff es a
 runFileSystemIO = interpret $ const \case
@@ -54,7 +54,5 @@ runFileSystemPure ::
   Eff es a
 runFileSystemPure fs0 = reinterpret (evalState fs0) $ const \case
   ReadFile path ->
-    gets (Map.!? path) >>= \case
-      Just contents -> pure contents
-      Nothing -> throwError $ FsError [i|file `#{path}` not found|]
+    gets (Map.!? path) >>= maybe (throwError $ FsError [i|file `#{path}` not found|]) pure
   WriteFile path contents -> modify $ Map.insert path contents
