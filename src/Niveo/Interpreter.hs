@@ -2,9 +2,9 @@ module Niveo.Interpreter
   ( Val (..),
     Env,
     Context (..),
-    interpret,
-    interpret',
+    evalTxt,
     eval,
+    throwReport,
   )
 where
 
@@ -23,6 +23,7 @@ import Error.Diagnose.Diagnostic (Diagnostic)
 import Error.Diagnose.Position (Position)
 import GHC.Show (Show (..))
 import Niveo.Instances ()
+import Niveo.Interpreter.FileSystem (FileSystem, readFile)
 import Niveo.Parser
   ( Expr (..),
     Lit (..),
@@ -38,7 +39,7 @@ import Optics.TH (makeFieldLabelsNoPrefix)
 import Relude.Extra (toFst, traverseBoth)
 import Relude.Unsafe (read)
 import Witch
-import Prelude hiding (Reader, ask, asks, local, runReader, show, withReader)
+import Prelude hiding (Reader, ask, asks, local, readFile, runReader, show, withReader, writeFile)
 
 data Val
   = -- Native JSON types.
@@ -63,17 +64,20 @@ instance From Lit Val where
   from (Lit LStr s) = VStr s.lexeme
   from (Lit LAtom s) = VAtom s.lexeme
 
+sepByComma :: Show a => [a] -> Text
+sepByComma xs = [i|#{intercalate ", " (show <$> xs)}|]
+
 instance Show Val where
   show VNull = "null"
   show (VBool b) = toLower <$> show b
   show (VNum n) = showRealFrac n
   show (VStr s) = show s
-  show (VList vs) = [i|[#{intercalate ", " vs'}]|] where vs' = vs <&> show & toList
-  show (VStruct kvs) = [i|struct{#{intercalate ", " kvs'}}|] where kvs' = kvs <&> (\(k, v) -> [i|#{k} = #{v}|]) & toList
+  show (VList vs) = [i|[#{sepByComma (toList vs)}]|]
+  show (VStruct kvs) = [i|struct{#{intercalate ", " (toList kvs')}}|] where kvs' = kvs <&> (\(k, v) -> [i|#{k} = #{v}|] :: String)
   show (VAtom s) = '\'' : toString s
-  show (VLambda params _ _) = [i|<fun(#{intercalate ", " params'})>|] where params' = into . (.lexeme) <$> params
+  show (VLambda params _ _) = [i|<fun(#{sepByComma params'})>|] where params' = params <&> (.lexeme)
   show (VHostFun (HostFun name _)) = [i|<extern fun #{name}>|]
-  showList vs = (<>) [i|[#{intercalate ", " $ fmap show vs}]|]
+  showList vs = (<>) [i|[#{sepByComma vs}]|]
 
 -- | If `n` is an `Integer`, then show it as an integer.
 -- Otherwise it will be shown normally.
@@ -94,19 +98,6 @@ instance Show Name where
 
 newtype Env = Env {dict :: Map Text Val} deriving (Eq, Show)
 
-instance Default Env where
-  def = Env {dict}
-    where
-      dict =
-        Map.fromList $
-          second VHostFun . toFst (.name)
-            <$> [HostFun "import" import_]
-
-import_ :: RawHostFun
-import_ [VStr path] = undefined
--- Atom for outside of prelude.
-import_ _ = undefined
-
 data Context = Context
   { env :: Env,
     fin :: FilePath,
@@ -114,9 +105,13 @@ data Context = Context
   }
   deriving (Generic)
 
-type EvalEffs = [Error (Diagnostic Text), Reader Context]
+type EvalEs =
+  [ Error (Diagnostic Text),
+    FileSystem,
+    Reader Context
+  ]
 
-type RawHostFun = [Val] -> Eff EvalEffs Val
+type RawHostFun = [Val] -> Eff EvalEs Val
 
 data HostFun = HostFun
   { name :: !Text,
@@ -126,19 +121,43 @@ data HostFun = HostFun
 instance Eq HostFun where
   hf == hf' = hf.name == hf'.name
 
+-- Template Haskell makes the order of declarations very important:
+-- Mutual referencing declarations can happen exclusively before/after those TH lines,
+-- and those using the generated instances can only be placed after them.
+-- See: <https://stackoverflow.com/a/20877030>.
 makeFieldLabelsNoPrefix ''Env
 makeFieldLabelsNoPrefix ''Context
 
-interpret' :: Context -> Either (Diagnostic Text) Val
-interpret' ctx = runPureEff . runReader ctx . runErrorNoCallStack $ interpret
+instance Default Env where
+  def = prelude
 
-interpret :: Eff EvalEffs Val
-interpret = do
+prelude :: Env
+prelude = Env {dict = prelude'}
+  where
+    prelude' =
+      Map.fromList $
+        second VHostFun . toFst (.name)
+          <$> [HostFun "import" import_]
+
+import_ :: RawHostFun
+import_ [VStr fin] = do
+  src <- readFile (into fin)
+  let ctx = Context {env = def, fin = into fin, src = into src}
+  evalTxt & local (const ctx)
+-- Atom for outside of prelude.
+-- TODO: Support atoms.
+import_ vs =
+  throwReport
+    [i|unexpected args when calling `import`: expected `(atom_or_string)`, found `(#{sepByComma vs})`|]
+    []
+
+evalTxt :: EvalEs :>> es => Eff es Val
+evalTxt = do
   ctx <- ask @Context
   prog <- parse program ctx.fin ctx.src & either throwError pure
   eval prog.expr
 
-eval :: EvalEffs :>> es => Expr -> Eff es Val
+eval :: EvalEs :>> es => Expr -> Eff es Val
 eval expr@(EUnary op rhs) = do
   rhs' <- eval rhs
   case (op.type_, rhs') of
@@ -150,7 +169,7 @@ eval expr@(EUnary op rhs) = do
         "mismatched types"
         [(expr.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
 eval expr@(EBinary lhs op rhs) = do
-  -- Lazy evaluation! No need to worry about short-circuiting.
+  -- TODO: Fix short-circuiting.
   (lhs', rhs') <- traverseBoth eval (lhs, rhs)
   case (op.type_, lhs', rhs') of
     (TStar2, VNum x, VNum y) -> pure . VNum $ x ** y
@@ -175,8 +194,14 @@ eval expr@(EBinary lhs op rhs) = do
 eval (ECall callee args _) =
   (callee, args) & bitraverse eval (eval `traverse`) >>= \case
     (VLambda params body env, args') ->
-      let localEnv = env & #dict %~ (Map.union . Map.fromList $ (params <&> (.lexeme)) `zip` args')
-       in eval body & local @Context (#env .~ localEnv)
+      if length params == length args
+        then
+          let localEnv = env & #dict %~ (Map.union . Map.fromList $ (params <&> (.lexeme)) `zip` args')
+           in eval body & local @Context (#env .~ localEnv)
+        else
+          throwReport
+            "mismatched types"
+            [(callee.range, This [i|invalid args when calling `#{callee}`: expected `(#{sepByComma params})` , found `(#{sepByComma args'})`|])]
     (VHostFun hf, args') -> hf.fun args' & inject
     _ -> throwReport "invalid call" [(callee.range, This [i|`#{callee}` is not callable|])]
 eval (EIndex this idx _) =
@@ -221,10 +246,10 @@ eval (ELet kw defs val) =
       else do
         ctx <- ask @Context
         let ctxUpdate ctx' (ident', def') = do
-              def'' <- eval def' & runReader ctx'
+              def'' <- eval def' & local (const ctx')
               ctx' & #env % #dict %~ Map.insert ident'.lexeme def'' & pure
         ctx' <- defs & foldM ctxUpdate ctx
-        eval val & runReader ctx'
+        eval val & local (const ctx')
 eval (ELambda _ params body) = asks @Context $ VLambda params body . (.env)
 eval (EStruct _ kvs) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
   where

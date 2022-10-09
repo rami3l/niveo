@@ -6,9 +6,12 @@ where
 
 import Data.Default (Default (..))
 import Effectful
-import Error.Diagnose.Diagnostic (printDiagnostic)
+import Effectful.Error.Static
+import Effectful.Reader.Static
+import Error.Diagnose.Diagnostic (Diagnostic, printDiagnostic)
 import Error.Diagnose.Style (defaultStyle)
-import Niveo.Interpreter (Context (..), interpret')
+import Niveo.Interpreter (Context (..), Val, evalTxt, throwReport)
+import Niveo.Interpreter.FileSystem (FsError (FsError), runFileSystemIO)
 import Options.Applicative
   ( Parser,
     help,
@@ -40,16 +43,24 @@ args = Args <$> optional (strOption load)
         <> help "Load a source file"
 
 dispatch :: Args -> IO ()
-dispatch (Args fin) = fin & maybe repl (runInputT defaultSettings . interpretInput)
+dispatch (Args fin) = fin & maybe repl (runInputT defaultSettings . evalTxtInput)
 
 repl :: IO ()
 repl = runInputT defaultSettings $ fix \loop -> do
-  getInputLine ">> " >>= (`whenJust` interpretInput)
+  getInputLine ">> " >>= (`whenJust` evalTxtInput)
   loop
 
-interpretInput :: MonadIO m => String -> InputT m ()
-interpretInput ln = interpret' ctx & either (liftIO . printErr) print'
+evalTxtInput :: MonadIO m => String -> InputT m ()
+evalTxtInput ln =
+  runEff evalTxtIO & liftIO >>= either printErr print'
   where
+    evalTxtIO :: Eff '[IOE] (Either (Diagnostic Text) Val) =
+      evalTxt
+        & runFileSystemIO
+        & runErrorNoCallStack @FsError
+        >>= either (\(FsError e) -> throwReport e []) pure
+        & runErrorNoCallStack @(Diagnostic _)
+        & runReader ctx
     ctx = Context {env = def, fin = "<stdin>", src = toText ln}
     print' = outputStrLn . ("<< " <>) . show @String
     printErr = printDiagnostic stdout useUnicode useColors 4 defaultStyle

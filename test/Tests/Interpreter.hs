@@ -2,20 +2,33 @@ module Tests.Interpreter where
 
 import Data.Default (def)
 import Data.String.Interpolate
-import Error.Diagnose.Diagnostic (diagnosticToJson)
-import Niveo.Interpreter (Context (..), interpret')
+import Effectful
+import Effectful.Error.Static
+import Effectful.Reader.Static
+import Error.Diagnose (Diagnostic, diagnosticToJson)
+import Niveo.Interpreter (Context (..), Val, evalTxt, throwReport)
+import Niveo.Interpreter.FileSystem (FsError (..), runFileSystemPure)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (Assertion, testCase)
 import Tests.Common
+import Prelude hiding (runReader)
 
-interpret'' :: Text -> Either Text Text
-interpret'' got = interpret' ctx & bimap (decodeUtf8 . diagnosticToJson) show
+evalTxtTest :: Map FilePath String -> Text -> Either Text Text
+evalTxtTest fs src = runPureEff evalTxtPure & bimap showErr show
   where
-    ctx = Context {env = def, fin = "<test>", src = got}
+    evalTxtPure :: Eff '[] (Either (Diagnostic Text) Val) =
+      evalTxt
+        & runFileSystemPure fs
+        & runErrorNoCallStack @FsError
+        >>= either (\(FsError e) -> throwReport e []) pure
+        & runErrorNoCallStack @(Diagnostic _)
+        & runReader ctx
+    ctx = Context {env = def, fin = "<test>", src}
+    showErr = decodeUtf8 . diagnosticToJson
 
 assertExpr, assertExprError :: Text -> Text -> Assertion
-assertExpr = assert' . interpret''
-assertExprError = assertError' . interpret''
+assertExpr = assert' . evalTxtTest def
+assertExprError = assertError' . evalTxtTest def
 
 test_arithmetic :: TestTree
 test_arithmetic =
