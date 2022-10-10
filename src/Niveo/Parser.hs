@@ -45,9 +45,8 @@ import Text.Megaparsec
     option,
     registerParseError,
     satisfy,
-    sepBy,
-    sepBy1,
     sepEndBy,
+    sepEndBy1,
     single,
     (<?>),
   )
@@ -334,7 +333,7 @@ block :: Parser Expr
 block = EParen <$> (op TLBrace *> expression) <*> op TRBrace <?> "block"
 
 paramList :: Parser [Token]
-paramList = between (op TLParen) (op TRParen) (ident `sepBy` hidden (op TComma)) <?> "parameters"
+paramList = between (op TLParen) (op TRParen) (ident `sepEndBy` hidden (op TComma)) <?> "parameters"
 
 primary :: Parser Expr
 primary =
@@ -348,10 +347,10 @@ primary =
       block,
       ELet
         <$> (kw TLetrec <|> kw TLet)
-        <*> (NonEmpty.fromList <$> ((,) <$> ident <*> (op TEq *> expression)) `sepBy1` op TComma)
+        <*> (NonEmpty.fromList <$> ((,) <$> ident <*> (op TEq *> expression)) `sepEndBy1` hidden (op TComma))
         <*> (op TSemi *> expression),
-      EList <$> (op TLBrack *> (expression `sepEndBy` op TComma)) <*> op TRBrack,
-      EStruct <$> kw TStruct <*> between (op TLBrace) (op TRBrace) (structKV `sepEndBy` op TComma),
+      EList <$> (op TLBrack *> (expression `sepEndBy` hidden (op TComma))) <*> op TRBrack,
+      EStruct <$> kw TStruct <*> between (op TLBrace) (op TRBrace) (structKV `sepEndBy` hidden (op TComma)),
       EIfElse
         <$> kw TIf
         <*> between (op TLParen) (op TRParen) (expression <?> "condition")
@@ -395,7 +394,7 @@ call = label "call expression" $
   toInfixLParser primary \c -> choice $ [goArgs, goGet, goIndex] <&> ($ c)
   where
     goArgs c = ECall c <$> (op TLParen *> args) <*> op TRParen
-    args = expression `sepBy` hidden (op TComma) <?> "arguments"
+    args = expression `sepEndBy` hidden (op TComma) <?> "arguments"
     goGet c = do
       -- Sugar in indexing when the key string/atom can be parsed as ident.
       -- `this.prop` => `this["prop"]`

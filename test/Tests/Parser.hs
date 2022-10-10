@@ -34,10 +34,7 @@ test_arithmetic =
       testCase "with nested `let` and `letrec`" $
         [__i|
           let a =
-            let b =
-              c +
-                let d = e;
-                d + 1;
+            let b = c + { let d = e; d + 1 };
             b;
           letrec f = a + g;
           f
@@ -89,7 +86,7 @@ test_fun =
         |]
           `assertExpr` "(lambda '() (if (>= a 0) a (- a)))",
       testCase "with params" $
-        "fun(a, b) { let res = a + b ** a; res }"
+        "fun(a, b,) { let res = a + b ** a; res }"
           `assertExpr` "(lambda (a b) (let ((res (+ a (** b a)))) res))"
     ]
 
@@ -113,10 +110,10 @@ test_call =
   testGroup
     "Should parse function calls and index/get expressions"
     [ testCase "with complex call" $
-        "func (c) (u, r) (r(y), i) (n) (g) ()"
-          `assertExpr` "((((((func c) u r) (r y) i) n) g))",
+        "f (c) (u, r) (r(y), i,) (n,) (g) ()"
+          `assertExpr` "((((((f c) u r) (r y) i) n) g))",
       testCase "with complex call, typo" $
-        "func (c) (u, r (r(y), i) (n) (g) ()"
+        "f(c) (u, r (r(y), i) (n) (g) ()"
           `assertExprError` [i|expecting '\\)'$|],
       testCase "with indices and gets" $
         [i|breakfast["omelette"].filling[40+2]::wow|]
@@ -126,5 +123,9 @@ test_call =
           `assertExpr` [i|((@ ((@ (struct (("egg" 42))) "scramble") 3) "with") cheddar)|],
       testCase "with nested method calls" $
         "he.breakfast(omelette.filledWith('__cheese__), sausage)"
-          `assertExpr` [i|((@ he "breakfast") ((@ omelette "filledWith") '__cheese__) sausage)|]
+          `assertExpr` [i|((@ he "breakfast") ((@ omelette "filledWith") '__cheese__) sausage)|],
+      testCase "with `let` and lambda, no params" $
+        "let f = g(); f()" `assertExpr` [i|(let ((f (g))) (f))|],
+      testCase "with `let` and lambda, no params" $
+        "letrec f = fun() {f()}; f()" `assertExpr` [i|(letrec ((f (lambda '() (f)))) (f))|]
     ]
