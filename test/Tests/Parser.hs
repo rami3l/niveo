@@ -63,6 +63,9 @@ test_coll =
     [ testCase "with struct, no trailing comma" $
         [i|struct{"foo" + "bar" = 4.2, "ba z" = true && false}|]
           `assertExpr` [i|(struct (((+ "foo" "bar") 4.2) ("ba z" (&& true false))))|],
+      testCase "with struct, variable as key, no trailing comma" $
+        [i|struct{f = g}|]
+          `assertExpr` [i|(struct ((f g)))|],
       testCase "with struct, trailing comma, key shorthand, list" $
         [__i|
           struct{

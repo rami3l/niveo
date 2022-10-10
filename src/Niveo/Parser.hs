@@ -364,14 +364,17 @@ primary =
   where
     structKV =
       choice
-        [ -- Sugar when the key string can be parsed as ident.
+        [ try $
+            (,)
+              <$> (expression <?> "field")
+              <*> (op TEq *> (expression <?> "value")),
+          -- Sugar when the key string can be parsed as ident.
           -- `foo: bar` => `"foo" = bar`
           -- `foo` => `"foo" = foo` (named field punning)
           punnedLit ident LStr $ op TColon,
           -- Sugar when the key is an atom and the field is omitted.
           -- `'foo` => `'foo = foo` (named field punning)
-          punnedLit atom LAtom $ op TEq,
-          (,) <$> (expression <?> "field") <*> (op TEq *> (expression <?> "value"))
+          punnedLit atom LAtom $ op TEq
         ]
       where
         punnedLit parser litTy sep = do
