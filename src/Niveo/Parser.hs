@@ -332,8 +332,11 @@ instance Show Chars where
 block :: Parser Expr
 block = EParen <$> (op TLBrace *> expression) <*> op TRBrace <?> "block"
 
+comma :: Parser Token
+comma = hidden (op TComma)
+
 paramList :: Parser [Token]
-paramList = between (op TLParen) (op TRParen) (ident `sepEndBy` hidden (op TComma)) <?> "parameters"
+paramList = between (op TLParen) (op TRParen) (ident `sepEndBy` comma) <?> "parameters"
 
 primary :: Parser Expr
 primary =
@@ -347,10 +350,10 @@ primary =
       block,
       ELet
         <$> (kw TLetrec <|> kw TLet)
-        <*> (NonEmpty.fromList <$> ((,) <$> ident <*> (op TEq *> expression)) `sepEndBy1` hidden (op TComma))
+        <*> (NonEmpty.fromList <$> ((,) <$> ident <*> (op TEq *> expression)) `sepEndBy1` comma)
         <*> (op TSemi *> expression),
-      EList <$> (op TLBrack *> (expression `sepEndBy` hidden (op TComma))) <*> op TRBrack,
-      EStruct <$> kw TStruct <*> between (op TLBrace) (op TRBrace) (structKV `sepEndBy` hidden (op TComma)),
+      op TLBrack *> ((EList [] <$> op TRBrack) <|> (EList <$> expressions <*> op TRBrack)),
+      EStruct <$> kw TStruct <*> between (op TLBrace) (op TRBrace) (structKV `sepEndBy` comma),
       EIfElse
         <$> kw TIf
         <*> between (op TLParen) (op TRParen) (expression <?> "condition")
@@ -362,6 +365,7 @@ primary =
     ]
     <?> "primary expression"
   where
+    expressions = expression `sepEndBy1` comma <?> "expressions"
     structKV =
       choice
         [ try $
@@ -396,8 +400,10 @@ call :: Parser Expr
 call = label "call expression" $
   toInfixLParser primary \c -> choice $ [goArgs, goGet, goIndex] <&> ($ c)
   where
-    goArgs c = ECall c <$> (op TLParen *> args) <*> op TRParen
-    args = expression `sepEndBy` hidden (op TComma) <?> "arguments"
+    goArgs c =
+      op TLParen
+        *> ((ECall c [] <$> op TRParen) <|> (ECall c <$> args <*> op TRParen))
+    args = expression `sepEndBy1` comma <?> "arguments"
     goGet c = do
       -- Sugar in indexing when the key string/atom can be parsed as ident.
       -- `this.prop` => `this["prop"]`
