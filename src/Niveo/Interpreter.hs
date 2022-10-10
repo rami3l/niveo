@@ -262,8 +262,7 @@ eval (EStruct _ kvs) = VStruct . from <$> bitraverse evalName eval `traverse` kv
             [(expr'.range, This [i|expected string or atom, found `#{val}`|])]
 eval (ELit l) = pure $ from l
 eval (EVar tk) =
-  ask @Context
-    <&> (^. #env % #dict % at tk.lexeme)
+  asks @Context (^. #env % #dict % at tk.lexeme)
     >>= maybe
       ( throwReport
           "undefined variable"
