@@ -79,6 +79,7 @@ dependencies:
   - extra
   - megaparsec
   - optics
+  - parser-combinators
   - string-interpolate
   - vector
   - witch

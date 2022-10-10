@@ -14,11 +14,11 @@ module Niveo.Parser
   )
 where
 
+import Control.Monad.Combinators.NonEmpty qualified as NonEmpty
 import Data.Bimap (Bimap)
 import Data.Bimap qualified as Bimap
 import Data.Char (isDigit, toLower)
 import Data.Either.Extra (mapLeft)
-import Data.List.NonEmpty.Extra qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.String.Interpolate
 import Data.Text qualified as Text
@@ -46,7 +46,6 @@ import Text.Megaparsec
     registerParseError,
     satisfy,
     sepEndBy,
-    sepEndBy1,
     single,
     (<?>),
   )
@@ -350,9 +349,9 @@ primary =
       block,
       ELet
         <$> (kw TLetrec <|> kw TLet)
-        <*> (NonEmpty.fromList <$> ((,) <$> ident <*> (op TEq *> expression)) `sepEndBy1` comma)
+        <*> (((,) <$> ident <*> (op TEq *> expression)) `NonEmpty.sepEndBy1` comma)
         <*> (op TSemi *> expression),
-      op TLBrack *> ((EList [] <$> op TRBrack) <|> (EList <$> expressions <*> op TRBrack)),
+      EList <$> (op TLBrack *> (expression `sepEndBy` hidden (op TComma))) <*> op TRBrack,
       EStruct <$> kw TStruct <*> between (op TLBrace) (op TRBrace) (structKV `sepEndBy` comma),
       EIfElse
         <$> kw TIf
@@ -365,7 +364,6 @@ primary =
     ]
     <?> "primary expression"
   where
-    expressions = expression `sepEndBy1` comma <?> "expressions"
     structKV =
       choice
         [ try $
@@ -400,10 +398,8 @@ call :: Parser Expr
 call = label "call expression" $
   toInfixLParser primary \c -> choice $ [goArgs, goGet, goIndex] <&> ($ c)
   where
-    goArgs c =
-      op TLParen
-        *> ((ECall c [] <$> op TRParen) <|> (ECall c <$> args <*> op TRParen))
-    args = expression `sepEndBy1` comma <?> "arguments"
+    goArgs c = ECall c <$> (op TLParen *> args) <*> op TRParen
+    args = expression `sepEndBy` hidden (op TComma) <?> "arguments"
     goGet c = do
       -- Sugar in indexing when the key string/atom can be parsed as ident.
       -- `this.prop` => `this["prop"]`
@@ -436,10 +432,7 @@ logicOr = toInfixLParser logicAnd \c ->
   EBinary c <$> op TPipe2 <*> logicAnd
 
 expression :: Parser Expr
-expression = synced logicOr <?> "expression"
-  where
-    synced = withRecovery $ (*> (EError <$> sync end)) . registerParseError
-    end = choice $ op TSemi : (lookAhead . kw <$> [TTrue, TFalse, TNull, TStruct, TIf, TFun])
+expression = logicOr <?> "expression"
 
 -- | Syncs the parser towards the given Token pattern parser.
 --
@@ -452,7 +445,10 @@ sync :: Parser Token -> Parser Token
 sync = (snd <$>) . (anySingle `manyTill_`)
 
 program :: Parser Prog
-program = between space space expression <* eof <&> Prog <?> "program"
+program = between space space (synced expression) <* eof <&> Prog <?> "program"
+  where
+    synced = withRecovery $ (*> (EError <$> sync end)) . registerParseError
+    end = choice $ op TSemi : (lookAhead . kw <$> [TTrue, TFalse, TNull, TStruct, TIf, TFun])
 
 -- | A version of `Megaparsec.parse` supercharged by `diagnose` errors.
 parse ::
