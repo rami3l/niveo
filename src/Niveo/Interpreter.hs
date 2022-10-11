@@ -232,34 +232,36 @@ eval (EIfElse _ cond then_ else_) =
     (VBool cond') -> eval $ if cond' then then_ else else_
     cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
 eval (ELet kw defs val) =
-  do
-    -- Following the French CAML tradition here: https://stackoverflow.com/a/1891573
-    if kw.type_ == TLetrec
-      then do
-        let define (defs' :: NonEmpty (Token, Val)) =
-              let defs'' = Map.fromList $ first (.lexeme) <$> into @[(Token, Val)] defs'
-               in #env % #dict %~ Map.union defs''
-        defs' <- mfix \defs' ->
-          defs & traverse \(ident', def') ->
-            eval def' & local @Context (define defs') <&> (ident',)
-        eval val & local @Context (define defs')
-      else do
-        ctx <- ask @Context
-        let ctxUpdate ctx' (ident', def') = do
-              def'' <- eval def' & local (const ctx')
-              ctx' & #env % #dict %~ Map.insert ident'.lexeme def'' & pure
-        ctx' <- defs & foldM ctxUpdate ctx
-        eval val & local (const ctx')
+  -- Following the French CAML tradition here: https://stackoverflow.com/a/1891573
+  if kw.type_ == TLetrec
+    then do
+      let define (defs' :: NonEmpty (Token, Val)) =
+            let defs'' = Map.fromList $ first (.lexeme) <$> into @[(Token, Val)] defs'
+             in #env % #dict %~ Map.union defs''
+      defs' <- mfix \defs' ->
+        defs & traverse \(ident', def') ->
+          eval def' & local @Context (define defs') <&> (ident',)
+      eval val & local @Context (define defs')
+    else do
+      ctx <- ask @Context
+      let ctxUpdate ctx' (ident', def') = do
+            def'' <- eval def' & local (const ctx')
+            ctx' & #env % #dict %~ Map.insert ident'.lexeme def'' & pure
+      ctx' <- defs & foldM ctxUpdate ctx
+      eval val & local (const ctx')
 eval (ELambda _ params body) = asks @Context $ VLambda params body . (.env)
 eval (EStruct _ kvs) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
   where
     evalName expr' =
-      eval expr' <&> tryInto @Name >>= \case
-        Right name -> pure name
-        Left (TryFromException val _) ->
-          throwReport
-            "mismatched types"
-            [(expr'.range, This [i|expected string or atom, found `#{val}`|])]
+      eval expr'
+        <&> tryInto @Name
+        >>= either
+          ( \(TryFromException val _) ->
+              throwReport
+                "mismatched types"
+                [(expr'.range, This [i|expected string or atom, found `#{val}`|])]
+          )
+          pure
 eval (ELit l) = pure $ from l
 eval (EVar tk) =
   asks @Context (^. #env % #dict % at tk.lexeme)
