@@ -1,6 +1,7 @@
 module Niveo.Interpreter.FileSystem
   ( FileSystem (..),
     FsError (..),
+    FSMap,
     readFile,
     writeFile,
     runFileSystemIO,
@@ -32,8 +33,11 @@ data FileSystem :: Effect where
 
 makeEffect ''FileSystem
 
---- | File system error.
+-- | File system error.
 newtype FsError = FsError Text
+
+-- | A `Map` from text file paths to their contents.
+type FSMap = Map FilePath String
 
 -- Handlers
 
@@ -49,7 +53,7 @@ runFileSystemIO = interpret $ const \case
 
 runFileSystemPure ::
   Error FsError :> es =>
-  Map FilePath String ->
+  FSMap ->
   Eff (FileSystem : es) a ->
   Eff es a
 runFileSystemPure fs0 = reinterpret (evalState fs0) $ const \case
