@@ -75,8 +75,8 @@ instance Show Val where
   show (VList vs) = [i|[#{sepByComma (toList vs)}]|]
   show (VStruct kvs) = [i|struct{#{intercalate ", " (toList kvs')}}|] where kvs' = kvs <&> (\(k, v) -> [i|#{k} = #{v}|] :: String)
   show (VAtom s) = '\'' : toString s
-  show (VLambda params _ _) = [i|<fun(#{sepByComma params'})>|] where params' = params <&> (.lexeme)
-  show (VHostFun (HostFun name _)) = [i|<extern fun #{name}>|]
+  show (VLambda {params}) = [i|<fun(#{sepByComma params'})>|] where params' = params <&> (.lexeme)
+  show (VHostFun (HostFun {name})) = [i|<extern fun #{name}>|]
   showList vs = (<>) [i|[#{sepByComma vs}]|]
 
 -- | If `n` is an `Integer`, then show it as an integer.
@@ -111,10 +111,15 @@ type EvalEs =
     Reader Context
   ]
 
-type RawHostFun = [Val] -> Eff EvalEs Val
+type RawHostFun = forall es. EvalEs :>> es => [Val] -> Eff es Val
 
 data HostFun = HostFun
   { name :: !Text,
+    -- It seems that `hostFun.fun`'s use of `PolymorphicComponents` doesn't work very well with `OverloadedRecordDot`'s `HasField` class.
+    -- Try `(HostFun {fun})` instead to access this field.
+    --
+    -- See: <https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/hasfield.html>:
+    -- > If a record field has a polymorphic type [..] the corresponding HasField constraint will not be solved...
     fun :: RawHostFun
   }
 
@@ -158,7 +163,7 @@ evalTxt = do
   eval prog.expr
 
 eval :: EvalEs :>> es => Expr -> Eff es Val
-eval expr@(EUnary op rhs) = do
+eval expr@(EUnary {op, rhs}) = do
   rhs' <- eval rhs
   case (op.type_, rhs') of
     (TBang, VBool b) -> pure . VBool $ not b
@@ -168,7 +173,7 @@ eval expr@(EUnary op rhs) = do
       throwReport
         "mismatched types"
         [(expr.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
-eval expr@(EBinary lhs op rhs) = do
+eval expr@(EBinary {lhs, op, rhs}) = do
   -- TODO: Fix short-circuiting.
   (lhs', rhs') <- traverseBoth eval (lhs, rhs)
   case (op.type_, lhs', rhs') of
@@ -191,7 +196,7 @@ eval expr@(EBinary lhs op rhs) = do
       throwReport
         "mismatched types"
         [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
-eval (ECall callee args _) =
+eval (ECall {callee, args}) =
   (callee, args) & bitraverse eval (eval `traverse`) >>= \case
     (VLambda params body env, args') ->
       if length params == length args
@@ -202,9 +207,9 @@ eval (ECall callee args _) =
           throwReport
             "mismatched types"
             [(callee.range, This [i|invalid args when calling `#{callee}`: expected `(#{sepByComma params})` , found `(#{sepByComma args'})`|])]
-    (VHostFun hf, args') -> hf.fun args' & inject
+    (VHostFun (HostFun {fun}), args') -> fun args'
     _ -> throwReport "invalid call" [(callee.range, This [i|`#{callee}` is not callable|])]
-eval (EIndex this idx _) =
+eval (EIndex {this, idx}) =
   let expected (ty :: String) n = throwReport "mismatched types" [(idx.range, This [i|expected #{ty}, found `#{n}`|])]
       noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
       findKV keyP kvs = kvs & find (keyP . fst) & maybe (noEntry idx) (pure . snd)
@@ -225,13 +230,13 @@ eval (EIndex this idx _) =
           throwReport
             "mismatched types"
             [(idx.range, This [i|could not apply `[]` to `(#{this}, #{idx})`|])]
-eval (EParen x _) = eval x
-eval (EList xs _) = VList . from <$> eval `traverse` xs
-eval (EIfElse _ cond then_ else_) =
+eval (EParen {inner}) = eval inner
+eval (EList {exprs}) = VList . from <$> eval `traverse` exprs
+eval (EIfElse {cond, then_, else_}) =
   eval cond >>= \case
     (VBool cond') -> eval $ if cond' then then_ else else_
     cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
-eval (ELet kw defs val) =
+eval (ELet {kw, defs, val}) =
   -- Following the French CAML tradition here: https://stackoverflow.com/a/1891573
   if kw.type_ == TLetrec
     then do
@@ -249,8 +254,8 @@ eval (ELet kw defs val) =
             ctx' & #env % #dict %~ Map.insert ident'.lexeme def'' & pure
       ctx' <- defs & foldM ctxUpdate ctx
       eval val & local (const ctx')
-eval (ELambda _ params body) = asks @Context $ VLambda params body . (.env)
-eval (EStruct _ kvs) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
+eval (ELambda {params, body}) = asks @Context $ VLambda params body . (.env)
+eval (EStruct {kvs}) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
   where
     evalName expr' =
       eval expr'

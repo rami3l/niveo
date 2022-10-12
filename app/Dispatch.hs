@@ -43,7 +43,7 @@ args = Args <$> optional (strOption load)
         <> help "Load a source file"
 
 dispatch :: Args -> IO ()
-dispatch (Args fin) = fin & maybe repl (runInputT defaultSettings . evalTxtInput)
+dispatch (Args {fin}) = fin & maybe repl (runInputT defaultSettings . evalTxtInput)
 
 repl :: IO ()
 repl = runInputT defaultSettings $ fix \loop -> do

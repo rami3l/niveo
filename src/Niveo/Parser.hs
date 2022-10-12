@@ -251,7 +251,7 @@ data LitType = LNull | LBool | LNum | LStr | LAtom deriving (Eq)
 data Lit = Lit {type_ :: !LitType, tk :: !Token} deriving (Eq)
 
 instance HasField "range" Lit Error.Diagnose.Position where
-  getField (Lit _ tk) = tk.range
+  getField (Lit {tk}) = tk.range
 
 instance Show Lit where
   show (Lit LNull _) = "null"
@@ -277,31 +277,31 @@ data Expr
   deriving (Eq)
 
 instance HasField "range" Expr Error.Diagnose.Position where
-  getField (EUnary op' _) = op'.range
-  getField (EBinary _ op' _) = op'.range
-  getField (ECall _ _ end') = end'.range
-  getField (EIndex _ _ end') = end'.range
-  getField (EParen _ end') = end'.range
-  getField (EList _ end') = end'.range
-  getField (EIfElse kw' _ _ _) = kw'.range
-  getField (ELet kw' _ _) = kw'.range
-  getField (ELambda kw' _ _) = kw'.range
-  getField (EStruct kw' _) = kw'.range
+  getField e@(EUnary {}) = e.op.range
+  getField e@(EBinary {}) = e.op.range
+  getField e@(ECall {}) = e.end.range
+  getField e@(EIndex {}) = e.end.range
+  getField e@(EParen {}) = e.end.range
+  getField e@(EList {}) = e.end.range
+  getField e@(EIfElse {}) = e.kw.range
+  getField e@(ELet {}) = e.kw.range
+  getField e@(ELambda {}) = e.kw.range
+  getField e@(EStruct {}) = e.kw.range
   getField (ELit lit) = lit.range
   getField (EVar var) = var.range
   getField (EError tk) = tk.range
 
 instance Show Expr where
-  show (EUnary op' rhs) = [i|(#{op'} #{rhs})|]
-  show (EBinary lhs op' rhs) = [i|(#{op'} #{lhs} #{rhs})|]
-  show (ECall callee args _) = show $ Showable callee : Showable `fmap` args
-  show (EIndex this idx _) = [i|(@ #{this} #{idx})|]
-  show (EParen inner _) = show inner
-  show (EList exprs _) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
-  show (EIfElse _ cond then_ else_) = [i|(if #{cond} #{then_} #{else_})|]
-  show (ELet kw' defs val) = [i|(#{kw'} #{defs'} #{val})|] where defs' = toList defs <&> (\(ident', def') -> Showable [Showable ident', Showable def'])
-  show (ELambda _ params body) = [i|(lambda #{params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
-  show (EStruct _ kvs) = [i|(struct #{kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
+  show (EUnary {op = op', rhs}) = [i|(#{op'} #{rhs})|]
+  show (EBinary {lhs, op = op', rhs}) = [i|(#{op'} #{lhs} #{rhs})|]
+  show (ECall {callee, args}) = show $ Showable callee : Showable `fmap` args
+  show (EIndex {this, idx}) = [i|(@ #{this} #{idx})|]
+  show (EParen {inner}) = show inner
+  show (EList {exprs}) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
+  show (EIfElse {cond, then_, else_}) = [i|(if #{cond} #{then_} #{else_})|]
+  show (ELet {kw = kw', defs, val}) = [i|(#{kw'} #{defs'} #{val})|] where defs' = toList defs <&> (\(ident', def') -> Showable [Showable ident', Showable def'])
+  show (ELambda {params, body}) = [i|(lambda #{params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
+  show (EStruct {kvs}) = [i|(struct #{kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
   show (EVar var) = var.lexeme & toString
   show (EError tk) = [i|"<error #{tk}>"|]
@@ -309,7 +309,7 @@ instance Show Expr where
 newtype Prog = Prog {expr :: Expr}
 
 instance Show Prog where
-  show (Prog val) = show val
+  show (Prog {expr}) = show expr
 
 data Showable = forall a. Show a => Showable a
 
