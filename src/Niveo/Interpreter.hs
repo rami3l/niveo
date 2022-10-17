@@ -65,7 +65,7 @@ instance From Lit Val where
   from (Lit LAtom s) = VAtom s.lexeme
 
 sepByComma :: Show a => [a] -> Text
-sepByComma xs = [i|#{intercalate ", " (show <$> xs)}|]
+sepByComma xs = into $ intercalate ", " (show <$> xs)
 
 instance Show Val where
   show VNull = "null"
@@ -124,7 +124,7 @@ data HostFun = HostFun
   }
 
 instance Eq HostFun where
-  hf == hf' = hf.name == hf'.name
+  (==) = (==) `on` (.name)
 
 -- Template Haskell makes the order of declarations very important:
 -- Mutual referencing declarations can happen exclusively before/after those TH lines,
@@ -167,7 +167,7 @@ eval expr@(EUnary {op, rhs}) = do
   rhs' <- eval rhs
   case (op.type_, rhs') of
     (TBang, VBool b) -> pure . VBool $ not b
-    (TPlus, VNum x) -> pure . VNum $ x
+    (TPlus, x@(VNum _)) -> pure x
     (TMinus, VNum x) -> pure . VNum $ negate x
     _ ->
       throwReport

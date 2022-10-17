@@ -103,7 +103,8 @@ ops =
       (TBangEq, "!="),
       (TBang, "!"),
       (TAmp2, "&&"),
-      (TPipe2, "||")
+      (TPipe2, "||"),
+      (TPipeGt, "|>")
     ]
 
 data TokenType
@@ -142,6 +143,7 @@ data TokenType
   | TBangEq
   | TAmp2
   | TPipe2
+  | TPipeGt
   | TNum
   | TStr
   | TIdent
@@ -394,12 +396,14 @@ toInfixLParser car cdr = do
       c' <- cdr c
       c' `option` go c'
 
+callArgs :: Parser [Expr]
+callArgs = expression `sepEndBy` comma <?> "arguments"
+
 call :: Parser Expr
 call = label "call expression" $
   toInfixLParser primary \c -> choice $ [goArgs, goGet, goIndex] <&> ($ c)
   where
-    goArgs c = ECall c <$> (op TLParen *> args) <*> op TRParen
-    args = expression `sepEndBy` hidden (op TComma) <?> "arguments"
+    goArgs c = ECall c <$> (op TLParen *> callArgs) <*> op TRParen
     goGet c = do
       -- Sugar in indexing when the key string/atom can be parsed as ident.
       -- `this.prop` => `this["prop"]`
@@ -409,7 +413,7 @@ call = label "call expression" $
       pure $ EIndex c field rawField
     goIndex c = EIndex c <$> (op TLBrack *> (expression <?> "index")) <*> op TRBrack
 
-unary, pow, factor, term, comparison, equality, logicAnd, logicOr :: Parser Expr
+unary, pow, factor, term, comparison, equality, logicAnd, logicOr, piped :: Parser Expr
 unary =
   (EUnary <$> choice (op <$> [TBang, TPlus, TMinus]) <*> (unary <?> "operand"))
     <|> call
@@ -430,9 +434,12 @@ logicAnd = toInfixLParser equality \c ->
   EBinary c <$> op TAmp2 <*> equality
 logicOr = toInfixLParser logicAnd \c ->
   EBinary c <$> op TPipe2 <*> logicAnd
+piped = toInfixLParser logicOr \c -> do
+  callee <- op TPipeGt *> (primary <?> "callee")
+  ECall callee <$> (op TLParen *> ((c :) <$> callArgs)) <*> op TRParen
 
 expression :: Parser Expr
-expression = logicOr <?> "expression"
+expression = piped <?> "expression"
 
 -- | Syncs the parser towards the given Token pattern parser.
 --
