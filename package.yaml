@@ -50,6 +50,7 @@ default-extensions:
   - PolyKinds
   - QuasiQuotes
   - RankNTypes
+  - ScopedTypeVariables
   - StandaloneDeriving
   - StandaloneKindSignatures
   - TemplateHaskell

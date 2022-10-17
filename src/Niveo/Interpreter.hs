@@ -142,7 +142,12 @@ prelude = Env {dict = prelude'}
     prelude' =
       Map.fromList $
         second VHostFun . toFst (.name)
-          <$> [HostFun "import" import_]
+          <$> [ HostFun "import" import_,
+                HostFun "prepend" prepend,
+                HostFun "delete" delete,
+                HostFun "rename" rename,
+                HostFun "update" update
+              ]
 
 import_ :: RawHostFun
 import_ [VStr fin] = do
@@ -153,8 +158,85 @@ import_ [VStr fin] = do
 -- TODO: Support atoms.
 import_ vs =
   throwReport
-    [i|unexpected args when calling `import`: expected `(atom_or_string)`, found `(#{sepByComma vs})`|]
+    [i|unexpected args when calling `import`: expected `(name)`, found `(#{sepByComma vs})`|]
     []
+
+prepend :: RawHostFun
+prepend vs =
+  let abort =
+        throwReport
+          [i|unexpected args when calling `prepend`: expected `(struct, name, _)`, found `(#{sepByComma vs})`|]
+          []
+   in case vs of
+        [VStruct kvs, k, v] ->
+          tryInto @Name k
+            & either (const abort) (pure . VStruct . (Seq.:<| kvs) . (,v))
+        _ -> abort
+
+delete :: RawHostFun
+delete vs =
+  let abort =
+        throwReport
+          [i|unexpected args when calling `delete`: expected `(struct, name)`, found `(#{sepByComma vs})`|]
+          []
+      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
+   in case vs of
+        [s@(VStruct kvs), k] ->
+          tryInto @Name k
+            & either
+              (const abort)
+              ( \k' ->
+                  kvs
+                    & Seq.findIndexL ((== k') . fst)
+                    & maybe (noEntry s k) (pure . VStruct . (`Seq.deleteAt` kvs))
+              )
+        _ -> abort
+
+rename :: RawHostFun
+rename vs =
+  let abort =
+        throwReport
+          [i|unexpected args when calling `rename`: expected `(struct, name, name)`, found `(#{sepByComma vs})`|]
+          []
+      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
+   in case vs of
+        [s@(VStruct kvs), k, k1] ->
+          tryInto @Name
+            `traverseBoth` (k, k1)
+            & either
+              (const abort)
+              ( \(k', k1') ->
+                  kvs
+                    & Seq.findIndexL ((== k') . fst)
+                    & maybe
+                      (noEntry s k)
+                      ( \idx ->
+                          let (_, v) = kvs `Seq.index` idx
+                           in pure . VStruct $ Seq.update idx (k1', v) kvs
+                      )
+              )
+        _ -> abort
+
+update :: RawHostFun
+update vs =
+  let abort =
+        throwReport
+          [i|unexpected args when calling `update`: expected `(struct, name, _)`, found `(#{sepByComma vs})`|]
+          []
+      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
+   in case vs of
+        [s@(VStruct kvs), k, v] ->
+          tryInto @Name k
+            & either
+              (const abort)
+              ( \k' ->
+                  kvs
+                    & Seq.findIndexL ((== k') . fst)
+                    & maybe
+                      (noEntry s k)
+                      (\idx -> pure . VStruct $ Seq.update idx (k', v) kvs)
+              )
+        _ -> abort
 
 evalTxt :: EvalEs :>> es => Eff es Val
 evalTxt = do
