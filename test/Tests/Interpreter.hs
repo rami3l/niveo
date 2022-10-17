@@ -107,7 +107,19 @@ test_coll =
         |]
           `assertEval` [i|"NightLights"|],
       testCase "with struct accessors, invalid entry" $
-        [i|struct{one: "Night"}.two|] `assertEvalError` "no entry found"
+        [i|struct{one: "Night"}.two|] `assertEvalError` "no entry found",
+      testCase "with struct prelude function `prepend`" $
+        "struct{'foo = 40, 'bar = 42} |> prepend('bar, 10086)"
+          `assertEval` "struct{'bar = 10086, 'foo = 40, 'bar = 42}",
+      testCase "with struct prelude function `delete`" $
+        "struct{'bar = 10086, 'foo = 40, 'bar = 42} |> delete('bar)"
+          `assertEval` "struct{'foo = 40, 'bar = 42}",
+      testCase "with struct prelude function `rename`" $
+        [i|struct{'bar = 10086, 'foo = 40, 'bar = 42} |> rename('foo, "baz")|]
+          `assertEval` [i|struct{'bar = 10086, "baz" = 40, 'bar = 42}|],
+      testCase "with struct prelude function `update`" $
+        "struct{'foo = 40, 'bar = 42} |> update('bar, 10086)"
+          `assertEval` "struct{'foo = 40, 'bar = 10086}"
     ]
 
 test_bool :: TestTree

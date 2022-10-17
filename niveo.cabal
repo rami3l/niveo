@@ -63,6 +63,7 @@ library
       PolyKinds
       QuasiQuotes
       RankNTypes
+      ScopedTypeVariables
       StandaloneDeriving
       StandaloneKindSignatures
       TemplateHaskell
@@ -132,6 +133,7 @@ executable niveo-exe
       PolyKinds
       QuasiQuotes
       RankNTypes
+      ScopedTypeVariables
       StandaloneDeriving
       StandaloneKindSignatures
       TemplateHaskell
@@ -207,6 +209,7 @@ test-suite niveo-test
       PolyKinds
       QuasiQuotes
       RankNTypes
+      ScopedTypeVariables
       StandaloneDeriving
       StandaloneKindSignatures
       TemplateHaskell
