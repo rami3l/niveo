@@ -121,6 +121,13 @@ test_bool =
           let foo = 'foo, bar = true, a = !bar, b = 3;
           foo == null || !!bar && a != (b == 3)
         |]
+          `assertEval` "true",
+      testCase "with `&&` and `||`, short-circuiting" $
+        [__i|
+          let should_be_true = 2 + 2 == 4 || whatever;
+          let should_be_false = 2 * 2 != 4 && null;
+          should_be_true && !should_be_false
+        |]
           `assertEval` "true"
     ]
 

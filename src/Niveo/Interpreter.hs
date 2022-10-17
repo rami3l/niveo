@@ -174,28 +174,33 @@ eval expr@(EUnary {op, rhs}) = do
         "mismatched types"
         [(expr.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
 eval expr@(EBinary {lhs, op, rhs}) = do
-  -- TODO: Fix short-circuiting.
-  (lhs', rhs') <- traverseBoth eval (lhs, rhs)
-  case (op.type_, lhs', rhs') of
-    (TStar2, VNum x, VNum y) -> pure . VNum $ x ** y
-    (TSlash, VNum x, VNum y) -> pure . VNum $ x / y
-    (TStar, VNum x, VNum y) -> pure . VNum $ x * y
-    (TMinus, VNum x, VNum y) -> pure . VNum $ x - y
-    (TPlus, VNum x, VNum y) -> pure . VNum $ x + y
-    (TPlus, VStr x, VStr y) -> pure . VStr $ x <> y
-    (TPlus, VList x, VList y) -> pure . VList $ x <> y
-    (TGtEq, VNum x, VNum y) -> pure . VBool $ x >= y
-    (TGt, VNum x, VNum y) -> pure . VBool $ x > y
-    (TLtEq, VNum x, VNum y) -> pure . VBool $ x <= y
-    (TLt, VNum x, VNum y) -> pure . VBool $ x < y
-    (TBangEq, x, y) -> pure . VBool $ x /= y
-    (TEq2, x, y) -> pure . VBool $ x == y
-    (TAmp2, VBool x, VBool y) -> pure . VBool $ x && y
-    (TPipe2, VBool x, VBool y) -> pure . VBool $ x || y
-    _ ->
-      throwReport
-        "mismatched types"
-        [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
+  lhs' <- eval lhs
+  case (op.type_, lhs') of
+    -- Handle short-circuiting for `&&` and `||`.
+    (TAmp2, VBool False) -> pure $ VBool False
+    (TPipe2, VBool True) -> pure $ VBool True
+    _ -> do
+      rhs' <- eval rhs
+      case (op.type_, lhs', rhs') of
+        (TStar2, VNum x, VNum y) -> pure . VNum $ x ** y
+        (TSlash, VNum x, VNum y) -> pure . VNum $ x / y
+        (TStar, VNum x, VNum y) -> pure . VNum $ x * y
+        (TMinus, VNum x, VNum y) -> pure . VNum $ x - y
+        (TPlus, VNum x, VNum y) -> pure . VNum $ x + y
+        (TPlus, VStr x, VStr y) -> pure . VStr $ x <> y
+        (TPlus, VList x, VList y) -> pure . VList $ x <> y
+        (TGtEq, VNum x, VNum y) -> pure . VBool $ x >= y
+        (TGt, VNum x, VNum y) -> pure . VBool $ x > y
+        (TLtEq, VNum x, VNum y) -> pure . VBool $ x <= y
+        (TLt, VNum x, VNum y) -> pure . VBool $ x < y
+        (TBangEq, x, y) -> pure . VBool $ x /= y
+        (TEq2, x, y) -> pure . VBool $ x == y
+        (TAmp2, _, b@(VBool _)) -> pure b
+        (TPipe2, _, b@(VBool _)) -> pure b
+        _ ->
+          throwReport
+            "mismatched types"
+            [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
 eval (ECall {callee, args}) =
   (callee, args) & bitraverse eval (eval `traverse`) >>= \case
     (VLambda params body env, args') ->
@@ -212,18 +217,14 @@ eval (ECall {callee, args}) =
 eval (EIndex {this, idx}) =
   let expected (ty :: String) n = throwReport "mismatched types" [(idx.range, This [i|expected #{ty}, found `#{n}`|])]
       noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
+      noIndex len n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len} but the index is `#{n'}`|])]
       findKV keyP kvs = kvs & find (keyP . fst) & maybe (noEntry idx) (pure . snd)
    in traverseBoth eval (this, idx) >>= \case
         (VList l, VNum n) ->
           tryInto @Int n
             & either
               (const $ expected "integer" n)
-              ( \n' ->
-                  l Seq.!? n'
-                    & maybe
-                      (throwReport "index out of bounds" [(idx.range, This [i|the len is #{Seq.length l} but the index is `#{n'}`|])])
-                      pure
-              )
+              (\n' -> l Seq.!? n' & maybe (noIndex (Seq.length l) n') pure)
         (VStruct kvs, VStr s) -> kvs & findKV (== NStr s)
         (VStruct kvs, VAtom s) -> kvs & findKV (== NAtom s)
         _ ->
