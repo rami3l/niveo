@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Niveo.Interpreter
   ( Val (..),
     Env,
@@ -10,7 +12,6 @@ where
 
 import Control.Monad (foldM)
 import Control.Monad.Fix (mfix)
-import Data.Char (toLower)
 import Data.Default (Default (def))
 import Data.Map.Strict qualified as Map
 import Data.Sequence qualified as Seq
@@ -18,225 +19,24 @@ import Data.String.Interpolate
 import Effectful
 import Effectful.Error.Static
 import Effectful.Reader.Static
-import Error.Diagnose (Marker (This), addFile, addReport, err)
-import Error.Diagnose.Diagnostic (Diagnostic)
-import Error.Diagnose.Position (Position)
-import GHC.Show (Show (..))
+import Error.Diagnose (Marker (This))
 import Niveo.Instances ()
-import Niveo.Interpreter.FileSystem (FileSystem, readFile)
+import Niveo.Interpreter.FileSystem (readFile)
+import Niveo.Interpreter.Types
+import Niveo.Interpreter.Utils (throwReport)
 import Niveo.Parser
   ( Expr (..),
-    Lit (..),
-    LitType (..),
     Prog (..),
     Token (..),
     TokenType (..),
     parse,
     program,
   )
+import Niveo.Utils (sepByComma)
 import Optics (at, (%), (%~), (.~), (^.))
-import Optics.TH (makeFieldLabelsNoPrefix)
 import Relude.Extra (toFst, traverseBoth)
-import Relude.Unsafe (read)
 import Witch
-import Prelude hiding (Reader, ask, asks, local, readFile, runReader, show, withReader, writeFile)
-
-data Val
-  = -- Native JSON types.
-    VNull
-  | VBool !Bool
-  | VNum !Double
-  | VStr !Text
-  | VList (Seq Val)
-  | -- | `VStruct` is encoded as a list of @(tag, value)@ pairs, and the `tag`s can be identical,
-    -- in which case only the `value` of the *leftmost* `tag` is retrieved.
-    VStruct (Seq (Name, Val))
-  | -- Extra types.
-    VAtom !Text
-  | VLambda {params :: ![Token], body :: Expr, env :: Env}
-  | VHostFun HostFun
-  deriving (Eq)
-
-instance From Lit Val where
-  from (Lit LNull _) = VNull
-  from (Lit LBool b) = VBool $ b.type_ == TTrue
-  from (Lit LNum x) = VNum . read . into $ x.lexeme
-  from (Lit LStr s) = VStr s.lexeme
-  from (Lit LAtom s) = VAtom s.lexeme
-
-sepByComma :: Show a => [a] -> Text
-sepByComma xs = into $ intercalate ", " (show <$> xs)
-
-instance Show Val where
-  show VNull = "null"
-  show (VBool b) = toLower <$> show b
-  show (VNum n) = showRealFrac n
-  show (VStr s) = show s
-  show (VList vs) = [i|[#{sepByComma (toList vs)}]|]
-  show (VStruct kvs) = [i|struct{#{intercalate ", " (toList kvs')}}|] where kvs' = kvs <&> (\(k, v) -> [i|#{k} = #{v}|] :: String)
-  show (VAtom s) = '\'' : toString s
-  show (VLambda {params}) = [i|<fun(#{sepByComma params'})>|] where params' = params <&> (.lexeme)
-  show (VHostFun (HostFun {name})) = [i|<extern fun #{name}>|]
-  showList vs = (<>) [i|[#{sepByComma vs}]|]
-
--- | If `n` is an `Integer`, then show it as an integer.
--- Otherwise it will be shown normally.
-showRealFrac :: Double -> String
-showRealFrac n = n & tryInto @Integer & either (const $ show n) show
-
-data Name = NStr !Text | NAtom !Text deriving (Eq)
-
-instance TryFrom Val Name where
-  tryFrom (VStr s) = Right $ NStr s
-  tryFrom (VAtom s) = Right $ NAtom s
-  tryFrom v = Left $ TryFromException v Nothing
-
-instance Show Name where
-  show (NStr s) = show s
-  show (NAtom s) = '\'' : toString s
-  showList ns = (<>) [i|[#{intercalate ", " $ fmap show ns}]|]
-
-newtype Env = Env {dict :: Map Text Val} deriving (Eq, Show)
-
-data Context = Context
-  { env :: Env,
-    fin :: FilePath,
-    src :: Text
-  }
-  deriving (Generic)
-
-type EvalEs =
-  [ Error (Diagnostic Text),
-    FileSystem,
-    Reader Context
-  ]
-
-type RawHostFun = forall es. EvalEs :>> es => [Val] -> Eff es Val
-
-data HostFun = HostFun
-  { name :: !Text,
-    -- It seems that `hostFun.fun`'s use of `PolymorphicComponents` doesn't work very well with `OverloadedRecordDot`'s `HasField` class.
-    -- Try `(HostFun {fun})` instead to access this field.
-    --
-    -- See: <https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/hasfield.html>:
-    -- > If a record field has a polymorphic type [..] the corresponding HasField constraint will not be solved...
-    fun :: RawHostFun
-  }
-
-instance Eq HostFun where
-  (==) = (==) `on` (.name)
-
--- Template Haskell makes the order of declarations very important:
--- Mutual referencing declarations can happen exclusively before/after those TH lines,
--- and those using the generated instances can only be placed after them.
--- See: <https://stackoverflow.com/a/20877030>.
-makeFieldLabelsNoPrefix ''Env
-makeFieldLabelsNoPrefix ''Context
-
-instance Default Env where
-  def = prelude
-
-prelude :: Env
-prelude = Env {dict = prelude'}
-  where
-    prelude' =
-      Map.fromList $
-        second VHostFun . toFst (.name)
-          <$> [ HostFun "import" import_,
-                HostFun "prepend" prepend,
-                HostFun "delete" delete,
-                HostFun "rename" rename,
-                HostFun "update" update
-              ]
-
-import_ :: RawHostFun
-import_ [VStr fin] = do
-  src <- readFile (into fin)
-  let ctx = Context {env = def, fin = into fin, src = into src}
-  evalTxt & local (const ctx)
--- Atom for outside of prelude.
--- TODO: Support atoms.
-import_ vs =
-  throwReport
-    [i|unexpected args when calling `import`: expected `(name)`, found `(#{sepByComma vs})`|]
-    []
-
-prepend :: RawHostFun
-prepend vs =
-  let abort =
-        throwReport
-          [i|unexpected args when calling `prepend`: expected `(struct, name, _)`, found `(#{sepByComma vs})`|]
-          []
-   in case vs of
-        [VStruct kvs, k, v] ->
-          tryInto @Name k
-            & either (const abort) (pure . VStruct . (Seq.:<| kvs) . (,v))
-        _ -> abort
-
-delete :: RawHostFun
-delete vs =
-  let abort =
-        throwReport
-          [i|unexpected args when calling `delete`: expected `(struct, name)`, found `(#{sepByComma vs})`|]
-          []
-      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
-   in case vs of
-        [s@(VStruct kvs), k] ->
-          tryInto @Name k
-            & either
-              (const abort)
-              ( \k' ->
-                  kvs
-                    & Seq.findIndexL ((== k') . fst)
-                    & maybe (noEntry s k) (pure . VStruct . (`Seq.deleteAt` kvs))
-              )
-        _ -> abort
-
-rename :: RawHostFun
-rename vs =
-  let abort =
-        throwReport
-          [i|unexpected args when calling `rename`: expected `(struct, name, name)`, found `(#{sepByComma vs})`|]
-          []
-      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
-   in case vs of
-        [s@(VStruct kvs), k, k1] ->
-          tryInto @Name
-            `traverseBoth` (k, k1)
-            & either
-              (const abort)
-              ( \(k', k1') ->
-                  kvs
-                    & Seq.findIndexL ((== k') . fst)
-                    & maybe
-                      (noEntry s k)
-                      ( \idx ->
-                          let (_, v) = kvs `Seq.index` idx
-                           in pure . VStruct $ Seq.update idx (k1', v) kvs
-                      )
-              )
-        _ -> abort
-
-update :: RawHostFun
-update vs =
-  let abort =
-        throwReport
-          [i|unexpected args when calling `update`: expected `(struct, name, _)`, found `(#{sepByComma vs})`|]
-          []
-      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
-   in case vs of
-        [s@(VStruct kvs), k, v] ->
-          tryInto @Name k
-            & either
-              (const abort)
-              ( \k' ->
-                  kvs
-                    & Seq.findIndexL ((== k') . fst)
-                    & maybe
-                      (noEntry s k)
-                      (\idx -> pure . VStruct $ Seq.update idx (k', v) kvs)
-              )
-        _ -> abort
+import Prelude hiding (ask, asks, local, readFile)
 
 evalTxt :: EvalEs :>> es => Eff es Val
 evalTxt = do
@@ -364,12 +164,109 @@ eval expr@(EError tk) =
     "internal error"
     [(expr.range, This [i|illegal expression `#{tk}`|])]
 
-throwReport ::
-  [Error (Diagnostic Text), Reader Context] :>> es =>
-  Text ->
-  [(Position, Marker Text)] ->
-  Eff es a
-throwReport msg markers = do
-  ctx <- ask @Context
-  let diag = addFile @Text def ctx.fin $ toString ctx.src
-  throwError . (diag `addReport`) $ err Nothing msg markers []
+-- * The Niveo Prelude
+
+instance Default Env where
+  def = prelude
+
+prelude :: Env
+prelude = Env {dict = prelude'}
+  where
+    prelude' =
+      Map.fromList $
+        second VHostFun . toFst (.name)
+          <$> [ HostFun "import" import_,
+                HostFun "prepend" prepend,
+                HostFun "delete" delete,
+                HostFun "rename" rename,
+                HostFun "update" update
+              ]
+
+import_ :: RawHostFun
+import_ [VStr fin] = do
+  src <- readFile (into fin)
+  let ctx = Context {env = def, fin = into fin, src = into src}
+  evalTxt & local (const ctx)
+-- Atom for outside of prelude.
+-- TODO: Support atoms.
+import_ vs =
+  throwReport
+    [i|unexpected args when calling `import`: expected `(name)`, found `(#{sepByComma vs})`|]
+    []
+
+prepend :: RawHostFun
+prepend vs =
+  let abort =
+        throwReport
+          [i|unexpected args when calling `prepend`: expected `(struct, name, _)`, found `(#{sepByComma vs})`|]
+          []
+   in case vs of
+        [VStruct kvs, k, v] ->
+          tryInto @Name k
+            & either (const abort) (pure . VStruct . (Seq.:<| kvs) . (,v))
+        _ -> abort
+
+delete :: RawHostFun
+delete vs =
+  let abort =
+        throwReport
+          [i|unexpected args when calling `delete`: expected `(struct, name)`, found `(#{sepByComma vs})`|]
+          []
+      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
+   in case vs of
+        [s@(VStruct kvs), k] ->
+          tryInto @Name k
+            & either
+              (const abort)
+              ( \k' ->
+                  kvs
+                    & Seq.findIndexL ((== k') . fst)
+                    & maybe (noEntry s k) (pure . VStruct . (`Seq.deleteAt` kvs))
+              )
+        _ -> abort
+
+rename :: RawHostFun
+rename vs =
+  let abort =
+        throwReport
+          [i|unexpected args when calling `rename`: expected `(struct, name, name)`, found `(#{sepByComma vs})`|]
+          []
+      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
+   in case vs of
+        [s@(VStruct kvs), k, k1] ->
+          tryInto @Name
+            `traverseBoth` (k, k1)
+            & either
+              (const abort)
+              ( \(k', k1') ->
+                  kvs
+                    & Seq.findIndexL ((== k') . fst)
+                    & maybe
+                      (noEntry s k)
+                      ( \idx ->
+                          let (_, v) = kvs `Seq.index` idx
+                           in pure . VStruct $ Seq.update idx (k1', v) kvs
+                      )
+              )
+        _ -> abort
+
+update :: RawHostFun
+update vs =
+  let abort =
+        throwReport
+          [i|unexpected args when calling `update`: expected `(struct, name, _)`, found `(#{sepByComma vs})`|]
+          []
+      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
+   in case vs of
+        [s@(VStruct kvs), k, v] ->
+          tryInto @Name k
+            & either
+              (const abort)
+              ( \k' ->
+                  kvs
+                    & Seq.findIndexL ((== k') . fst)
+                    & maybe
+                      (noEntry s k)
+                      (\idx -> pure . VStruct $ Seq.update idx (k', v) kvs)
+              )
+        _ -> abort
