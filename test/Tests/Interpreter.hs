@@ -43,11 +43,9 @@ test_arithmetic =
         "+2 / (9 -6 + 1  )- 3 *-5.7 ** 1 ** -6" `assertEval` "17.6",
       testCase "with string concat" $
         [i|"Hello," + " world!"|] `assertEval` [i|"Hello, world!"|],
-      testCase "with simple `let`" $
-        "let a = 9; a * 6" `assertEval` "54",
-      testCase "with simple `let`, undefined variable" $
-        "let a = 9; b * 6" `assertEvalError` [i|`b` not found in this scope|],
-      testCase "with nested `let`" $
+      testCase "with `let`" do
+        "let a = 9; a * 6" `assertEval` "54"
+        "let a = 9; b * 6" `assertEvalError` [i|`b` not found in this scope|]
         [__i|
           let c = 38; let e = 1; let g = 2; 
           let a =
@@ -82,14 +80,12 @@ test_coll =
     "Should evaluate collection literals and operations"
     [ testCase "with list concat" $
         "['what, 'is] + ['love]" `assertEval` "['what, 'is, 'love]",
-      testCase "with list indexing" $
-        "[0, 1, 2, 3][3]" `assertEval` "3",
-      testCase "with list indexing, invalid index" $
+      testCase "with list indexing" do
+        "[0, 1, 2, 3][3]" `assertEval` "3"
         "[0, 1, 2, 3][4]" `assertEvalError` "index out of bounds",
-      testCase "with struct, no trailing comma" $
+      testCase "with struct" do
         [i|struct{"foo" + "bar" = 4.2, "ba z" = true && false}|]
-          `assertEval` [i|struct{"foobar" = 4.2, "ba z" = false}|],
-      testCase "with struct, trailing comma, key shorthand, list" $
+          `assertEval` [i|struct{"foobar" = 4.2, "ba z" = false}|]
         [__i|
           let foo = '__some_foo__;
           let bar = 42;
@@ -100,24 +96,30 @@ test_coll =
           }
         |]
           `assertEval` [i|struct{"foo" = '__some_foo__, 'bar = 42, "baz" = [1, 2.3]}|],
-      testCase "with struct accessors" $
+      testCase "with struct accessors" do
         [__i|
           let s = struct{one: "Night", 'blinding = "Lights"};
           s.one + s::blinding
         |]
-          `assertEval` [i|"NightLights"|],
-      testCase "with struct accessors, invalid entry" $
+          `assertEval` [i|"NightLights"|]
         [i|struct{one: "Night"}.two|] `assertEvalError` "no entry found",
-      testCase "with struct prelude function `prepend`" $
+      testCase "with prelude function `get`" do
+        let l = "[0, 1, 22, 333]"
+        (l <> "|> get(2)") `assertEval` "22"
+        (l <> "|> get(22)") `assertEval` "null"
+        let s = "struct{'foo = 40, 'bar = 42}"
+        (s <> "|> get('bar)") `assertEval` "42"
+        (s <> [i||> get("bar")|]) `assertEval` "null",
+      testCase "with prelude function `prepend`" $
         "struct{'foo = 40, 'bar = 42} |> prepend('bar, 10086)"
           `assertEval` "struct{'bar = 10086, 'foo = 40, 'bar = 42}",
-      testCase "with struct prelude function `delete`" $
+      testCase "with prelude function `delete`" $
         "struct{'bar = 10086, 'foo = 40, 'bar = 42} |> delete('bar)"
           `assertEval` "struct{'foo = 40, 'bar = 42}",
-      testCase "with struct prelude function `rename`" $
+      testCase "with prelude function `rename`" $
         [i|struct{'bar = 10086, 'foo = 40, 'bar = 42} |> rename('foo, "baz")|]
           `assertEval` [i|struct{'bar = 10086, "baz" = 40, 'bar = 42}|],
-      testCase "with struct prelude function `update`" $
+      testCase "with prelude function `update`" $
         "struct{'foo = 40, 'bar = 42} |> update('bar, 10086)"
           `assertEval` "struct{'foo = 40, 'bar = 10086}"
     ]
@@ -170,9 +172,8 @@ test_import :: TestTree
 test_import =
   testGroup
     "Should parse booleans"
-    [ testCase "with simple import" $
-        [i|import("three.niv") + 39|] `assertEval'` "42",
-      testCase "with invalid import" $
+    [ testCase "with simple import" do
+        [i|import("three.niv") + 39|] `assertEval'` "42"
         [i|import("four.niv") + 38|] `assertEvalError'` "file `four.niv` not found",
       testCase "with nested import" $
         [i|let s = import("struct.niv"); s.three * s::four|] `assertEval'` "12"
