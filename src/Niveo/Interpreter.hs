@@ -33,7 +33,7 @@ import Niveo.Parser
     program,
   )
 import Niveo.Utils (sepByComma)
-import Optics (at, (%), (%~), (.~), (^.))
+import Optics (Ixed (ix), at, (%), (%~), (.~), (^.))
 import Relude.Extra (toFst, traverseBoth)
 import Witch
 import Prelude hiding (ask, asks, local, readFile)
@@ -182,6 +182,12 @@ prelude = Env {dict = prelude'}
                 HostFun "update" update
               ]
 
+unexpectedArgs :: EvalEs :>> es => Text -> Text -> [Val] -> Eff es Val
+unexpectedArgs funName expectedTys vs =
+  throwReport
+    [i|unexpected args when calling `#{funName}`: expected `(#{expectedTys})`, found `(#{sepByComma vs})`|]
+    []
+
 import_ :: RawHostFun
 import_ [VStr fin] = do
   src <- readFile (into fin)
@@ -189,48 +195,37 @@ import_ [VStr fin] = do
   evalTxt & local (const ctx)
 -- Atom for outside of prelude.
 -- TODO: Support atoms.
-import_ vs =
-  throwReport
-    [i|unexpected args when calling `import`: expected `(name)`, found `(#{sepByComma vs})`|]
-    []
+import_ vs = unexpectedArgs "import" "name" vs
 
 prepend :: RawHostFun
 prepend vs =
-  let abort =
-        throwReport
-          [i|unexpected args when calling `prepend`: expected `(struct, name, _)`, found `(#{sepByComma vs})`|]
-          []
+  let abort = unexpectedArgs "prepend" "struct, name, _" vs
    in case vs of
         [VStruct kvs, k, v] ->
           tryInto @Name k
             & either (const abort) (pure . VStruct . (Seq.:<| kvs) . (,v))
         _ -> abort
 
+structFindIndex :: Eq k => k -> Seq (k, v) -> Maybe Int
+structFindIndex k = Seq.findIndexL $ (== k) . fst
+
 delete :: RawHostFun
 delete vs =
-  let abort =
-        throwReport
-          [i|unexpected args when calling `delete`: expected `(struct, name)`, found `(#{sepByComma vs})`|]
-          []
+  let abort = unexpectedArgs "delete" "struct, name" vs
       noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
    in case vs of
         [s@(VStruct kvs), k] ->
           tryInto @Name k
             & either
               (const abort)
-              ( \k' ->
-                  kvs
-                    & Seq.findIndexL ((== k') . fst)
-                    & maybe (noEntry s k) (pure . VStruct . (`Seq.deleteAt` kvs))
+              ( maybe (noEntry s k) (pure . VStruct . (`Seq.deleteAt` kvs))
+                  . (`structFindIndex` kvs)
               )
         _ -> abort
 
 rename :: RawHostFun
 rename vs =
-  let abort =
-        throwReport
-          [i|unexpected args when calling `rename`: expected `(struct, name, name)`, found `(#{sepByComma vs})`|]
-          []
+  let abort = unexpectedArgs "rename" "struct, name, name" vs
       noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
    in case vs of
         [s@(VStruct kvs), k, k1] ->
@@ -240,33 +235,25 @@ rename vs =
               (const abort)
               ( \(k', k1') ->
                   kvs
-                    & Seq.findIndexL ((== k') . fst)
+                    & structFindIndex k'
                     & maybe
                       (noEntry s k)
-                      ( \idx ->
-                          let (_, v) = kvs `Seq.index` idx
-                           in pure . VStruct $ Seq.update idx (k1', v) kvs
-                      )
+                      (\idx -> pure . VStruct $ kvs & ix idx %~ first (const k1'))
               )
         _ -> abort
 
 update :: RawHostFun
 update vs =
-  let abort =
-        throwReport
-          [i|unexpected args when calling `update`: expected `(struct, name, _)`, found `(#{sepByComma vs})`|]
-          []
+  let abort = unexpectedArgs "update" "struct, name, _" vs
       noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
    in case vs of
         [s@(VStruct kvs), k, v] ->
           tryInto @Name k
             & either
               (const abort)
-              ( \k' ->
-                  kvs
-                    & Seq.findIndexL ((== k') . fst)
-                    & maybe
-                      (noEntry s k)
-                      (\idx -> pure . VStruct $ Seq.update idx (k', v) kvs)
+              ( maybe
+                  (noEntry s k)
+                  (\idx -> pure . VStruct $ kvs & ix idx %~ second (const v))
+                  . (`structFindIndex` kvs)
               )
         _ -> abort
