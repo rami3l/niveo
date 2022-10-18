@@ -16,6 +16,7 @@ import Data.Default (Default (def))
 import Data.Map.Strict qualified as Map
 import Data.Sequence qualified as Seq
 import Data.String.Interpolate
+import Data.Tuple.Optics
 import Effectful
 import Effectful.Error.Static
 import Effectful.Reader.Static
@@ -34,7 +35,9 @@ import Niveo.Parser
     program,
   )
 import Niveo.Utils (sepByComma)
-import Optics (Ixed (ix), at, (%), (%~), (.~), (^.))
+import Optics (Ixed (ix), at, (%))
+import Optics.Operators
+import Optics.Operators.Unsafe
 import Relude.Extra (toFst, traverseBoth)
 import Witch
 import Prelude hiding (ask, asks, local, readFile)
@@ -95,16 +98,15 @@ eval (ECall {callee, args}) =
     (VHostFun (HostFun {fun}), args') -> fun callee.range args'
     _ -> throwReport "invalid call" [(callee.range, This [i|`#{callee}` is not callable|])]
 eval (EIndex {this, idx}) =
-  let expected = unexpectedTy idx.range
-      noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
+  let noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
       noIndex len n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len} but the index is `#{n'}`|])]
       findKV keyP kvs = kvs & find (keyP . fst) & maybe (noEntry idx) (pure . snd)
    in traverseBoth eval (this, idx) >>= \case
         (VList l, VNum n) ->
           tryInto @Int n
             & either
-              (const $ expected "integer" n)
-              (\n' -> l Seq.!? n' & maybe (noIndex (Seq.length l) n') pure)
+              (const $ unexpectedTy idx.range "integer" n)
+              (\n' -> l ^? ix n' & maybe (noIndex (Seq.length l) n') pure)
         (VStruct kvs, VStr s) -> kvs & findKV (== NStr s)
         (VStruct kvs, VAtom s) -> kvs & findKV (== NAtom s)
         (this', idx') ->
@@ -156,7 +158,21 @@ eval expr@(EError tk) =
     "internal error"
     [(expr.range, This [i|illegal expression `#{tk}`|])]
 
--- * The Niveo Prelude
+-- * Common runtime errors
+
+unexpectedArgs :: EvalEs :>> es => Position -> Text -> [Val] -> Eff es a
+unexpectedArgs funRange expected vs =
+  throwReport
+    "mismatched types"
+    [(funRange, This [i|unexpected args in this call: expected `#{expected}`, found `(#{sepByComma vs})`|])]
+
+unexpectedTy :: (EvalEs :>> es, Show s) => Position -> Text -> s -> Eff es a
+unexpectedTy range tyName v =
+  throwReport
+    "mismatched types"
+    [(range, This [i|expected #{tyName}, found `#{show @String v}`|])]
+
+-- * The Niveo prelude
 
 instance Default Env where
   def = prelude
@@ -168,20 +184,12 @@ prelude = Env {dict = prelude'}
       Map.fromList $
         second VHostFun . toFst (.name)
           <$> [ HostFun "import" import_,
+                HostFun "get" get_,
                 HostFun "prepend" prepend,
                 HostFun "delete" delete,
                 HostFun "rename" rename,
                 HostFun "update" update
               ]
-
-unexpectedArgs :: EvalEs :>> es => Position -> Text -> [Val] -> Eff es a
-unexpectedArgs funRange expected vs =
-  throwReport
-    "mismatched types"
-    [(funRange, This [i|unexpected args in this call: expected `#{expected}`, found `(#{sepByComma vs})`|])]
-
-unexpectedTy :: (EvalEs :>> es, Show s) => Position -> Text -> s -> Eff es a
-unexpectedTy range tyName v = throwReport "mismatched types" [(range, This [i|expected #{tyName}, found `#{show @String v}`|])]
 
 import_ :: RawHostFun
 import_ _ [VStr fin] = do
@@ -192,8 +200,19 @@ import_ _ [VStr fin] = do
 -- TODO: Support atoms.
 import_ range vs = unexpectedArgs range "(name)" vs
 
-get :: RawHostFun
-get = undefined
+get_ :: RawHostFun
+get_ range vs =
+  let abort = unexpectedArgs range "(list, int) | (struct, name)" vs
+   in case vs of
+        [VList l, VNum n] ->
+          tryInto @Int n
+            & either (const abort) (\n' -> l ^? ix n' & fromMaybe VNull & pure)
+        [VStruct kvs, k] ->
+          tryInto @Name k
+            & either
+              (const abort)
+              (pure . maybe VNull (\idx -> kvs ^?! ix idx & snd) . (`structFindIndex` kvs))
+        _ -> abort
 
 prepend :: RawHostFun
 prepend range vs =
@@ -236,7 +255,7 @@ rename range vs =
                     & structFindIndex k'
                     & maybe
                       (noEntry s k)
-                      (\idx -> pure . VStruct $ kvs & ix idx %~ first (const k1'))
+                      (\idx -> pure . VStruct $ kvs & ix idx % _1 .~ k1')
               )
         _ -> abort
 
@@ -251,7 +270,7 @@ update range vs =
               (const abort)
               ( maybe
                   (noEntry s k)
-                  (\idx -> pure . VStruct $ kvs & ix idx %~ second (const v))
+                  (\idx -> pure . VStruct $ kvs & ix idx % _2 .~ v)
                   . (`structFindIndex` kvs)
               )
         _ -> abort
