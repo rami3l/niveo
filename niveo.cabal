@@ -29,7 +29,10 @@ library
       Niveo.Instances
       Niveo.Interpreter
       Niveo.Interpreter.FileSystem
+      Niveo.Interpreter.Types
+      Niveo.Interpreter.Utils
       Niveo.Parser
+      Niveo.Utils
   other-modules:
       Paths_niveo
   autogen-modules:
