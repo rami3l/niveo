@@ -4,6 +4,7 @@
     "bitraverse",
     "Brack",
     "Effectful",
+    "Haskeline",
     "mempty",
     "Niveo",
     "Paren",

@@ -20,6 +20,7 @@ import Effectful
 import Effectful.Error.Static
 import Effectful.Reader.Static
 import Error.Diagnose (Marker (This))
+import Error.Diagnose.Position (Position)
 import Niveo.Instances ()
 import Niveo.Interpreter.FileSystem (readFile)
 import Niveo.Interpreter.Types
@@ -90,14 +91,11 @@ eval (ECall {callee, args}) =
         then
           let localEnv = env & #dict %~ (Map.union . Map.fromList $ (params <&> (.lexeme)) `zip` args')
            in eval body & local @Context (#env .~ localEnv)
-        else
-          throwReport
-            "mismatched types"
-            [(callee.range, This [i|invalid args when calling `#{callee}`: expected `(#{sepByComma params})` , found `(#{sepByComma args'})`|])]
-    (VHostFun (HostFun {fun}), args') -> fun args'
+        else unexpectedArgs callee.range [i|(#{sepByComma params})|] args'
+    (VHostFun (HostFun {fun}), args') -> fun callee.range args'
     _ -> throwReport "invalid call" [(callee.range, This [i|`#{callee}` is not callable|])]
 eval (EIndex {this, idx}) =
-  let expected (ty :: String) n = throwReport "mismatched types" [(idx.range, This [i|expected #{ty}, found `#{n}`|])]
+  let expected = unexpectedTy idx.range
       noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
       noIndex len n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len} but the index is `#{n'}`|])]
       findKV keyP kvs = kvs & find (keyP . fst) & maybe (noEntry idx) (pure . snd)
@@ -109,16 +107,16 @@ eval (EIndex {this, idx}) =
               (\n' -> l Seq.!? n' & maybe (noIndex (Seq.length l) n') pure)
         (VStruct kvs, VStr s) -> kvs & findKV (== NStr s)
         (VStruct kvs, VAtom s) -> kvs & findKV (== NAtom s)
-        _ ->
+        (this', idx') ->
           throwReport
             "mismatched types"
-            [(idx.range, This [i|could not apply `[]` to `(#{this}, #{idx})`|])]
+            [(idx.range, This [i|could not apply `[]` to `(#{this'}, #{idx'})`|])]
 eval (EParen {inner}) = eval inner
 eval (EList {exprs}) = VList . from <$> eval `traverse` exprs
 eval (EIfElse {cond, then_, else_}) =
   eval cond >>= \case
     (VBool cond') -> eval $ if cond' then then_ else else_
-    cond' -> throwReport "mismatched types" [(cond.range, This [i|expected boolean condition, found `#{cond'}`|])]
+    cond' -> unexpectedTy cond.range "boolean" cond'
 eval (ELet {kw, defs, val}) =
   -- Following the French CAML tradition here: https://stackoverflow.com/a/1891573
   if kw.type_ == TLetrec
@@ -143,13 +141,7 @@ eval (EStruct {kvs}) = VStruct . from <$> bitraverse evalName eval `traverse` kv
     evalName expr' =
       eval expr'
         <&> tryInto @Name
-        >>= either
-          ( \(TryFromException val _) ->
-              throwReport
-                "mismatched types"
-                [(expr'.range, This [i|expected string or atom, found `#{val}`|])]
-          )
-          pure
+        >>= either (\(TryFromException val _) -> unexpectedTy expr'.range "name" val) pure
 eval (ELit l) = pure $ from l
 eval (EVar tk) =
   asks @Context (^. #env % #dict % at tk.lexeme)
@@ -182,24 +174,30 @@ prelude = Env {dict = prelude'}
                 HostFun "update" update
               ]
 
-unexpectedArgs :: EvalEs :>> es => Text -> Text -> [Val] -> Eff es Val
-unexpectedArgs funName expectedTys vs =
+unexpectedArgs :: EvalEs :>> es => Position -> Text -> [Val] -> Eff es a
+unexpectedArgs funRange expected vs =
   throwReport
-    [i|unexpected args when calling `#{funName}`: expected `(#{expectedTys})`, found `(#{sepByComma vs})`|]
-    []
+    "mismatched types"
+    [(funRange, This [i|unexpected args in this call: expected `#{expected}`, found `(#{sepByComma vs})`|])]
+
+unexpectedTy :: (EvalEs :>> es, Show s) => Position -> Text -> s -> Eff es a
+unexpectedTy range tyName v = throwReport "mismatched types" [(range, This [i|expected #{tyName}, found `#{show @String v}`|])]
 
 import_ :: RawHostFun
-import_ [VStr fin] = do
+import_ _ [VStr fin] = do
   src <- readFile (into fin)
   let ctx = Context {env = def, fin = into fin, src = into src}
   evalTxt & local (const ctx)
 -- Atom for outside of prelude.
 -- TODO: Support atoms.
-import_ vs = unexpectedArgs "import" "name" vs
+import_ range vs = unexpectedArgs range "(name)" vs
+
+get :: RawHostFun
+get = undefined
 
 prepend :: RawHostFun
-prepend vs =
-  let abort = unexpectedArgs "prepend" "struct, name, _" vs
+prepend range vs =
+  let abort = unexpectedArgs range "(struct, name, _)" vs
    in case vs of
         [VStruct kvs, k, v] ->
           tryInto @Name k
@@ -210,8 +208,8 @@ structFindIndex :: Eq k => k -> Seq (k, v) -> Maybe Int
 structFindIndex k = Seq.findIndexL $ (== k) . fst
 
 delete :: RawHostFun
-delete vs =
-  let abort = unexpectedArgs "delete" "struct, name" vs
+delete range vs =
+  let abort = unexpectedArgs range "(struct, name)" vs
       noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
    in case vs of
         [s@(VStruct kvs), k] ->
@@ -224,8 +222,8 @@ delete vs =
         _ -> abort
 
 rename :: RawHostFun
-rename vs =
-  let abort = unexpectedArgs "rename" "struct, name, name" vs
+rename range vs =
+  let abort = unexpectedArgs range "(struct, name, name)" vs
       noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
    in case vs of
         [s@(VStruct kvs), k, k1] ->
@@ -243,8 +241,8 @@ rename vs =
         _ -> abort
 
 update :: RawHostFun
-update vs =
-  let abort = unexpectedArgs "update" "struct, name, _" vs
+update range vs =
+  let abort = unexpectedArgs range "(struct, name, _)" vs
       noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
    in case vs of
         [s@(VStruct kvs), k, v] ->

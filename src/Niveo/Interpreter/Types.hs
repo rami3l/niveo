@@ -14,6 +14,7 @@ import Data.String.Interpolate
 import Effectful
 import Effectful.Error.Static
 import Effectful.Reader.Static
+import Error.Diagnose (Position)
 import Error.Diagnose.Diagnostic (Diagnostic)
 import GHC.Show (Show (..))
 import Niveo.Instances ()
@@ -96,7 +97,7 @@ type EvalEs =
     Reader Context
   ]
 
-type RawHostFun = forall es. EvalEs :>> es => [Val] -> Eff es Val
+type RawHostFun = forall es. EvalEs :>> es => Position -> [Val] -> Eff es Val
 
 data HostFun = HostFun
   { name :: !Text,
