@@ -4,8 +4,7 @@ import Data.Default
 import Effectful
 import Effectful.Error.Static
 import Effectful.Reader.Static
-import Error.Diagnose (Diagnostic, Marker, Position, addReport, err)
-import Error.Diagnose.Diagnostic (addFile)
+import Error.Diagnose (Diagnostic, Marker, Position, addFile, addReport, err)
 import Niveo.Interpreter.Types (Context (..))
 import Prelude hiding (Reader, ask)
 

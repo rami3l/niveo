@@ -23,9 +23,8 @@ import Data.Map.Strict qualified as Map
 import Data.String.Interpolate
 import Data.Text qualified as Text
 import Data.Tuple.Extra (both)
-import Error.Diagnose (Diagnostic, Position (..))
+import Error.Diagnose (Diagnostic, Position (..), addFile)
 import Error.Diagnose.Compat.Megaparsec (errorDiagnosticFromBundle)
-import Error.Diagnose.Diagnostic (addFile)
 import GHC.Records (HasField (..))
 import GHC.Show (Show (..))
 import Niveo.Instances ()

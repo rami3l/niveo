@@ -14,8 +14,7 @@ import Data.String.Interpolate
 import Effectful
 import Effectful.Error.Static
 import Effectful.Reader.Static
-import Error.Diagnose (Position)
-import Error.Diagnose.Diagnostic (Diagnostic)
+import Error.Diagnose (Diagnostic, Position)
 import GHC.Show (Show (..))
 import Niveo.Instances ()
 import Niveo.Interpreter.FileSystem (FileSystem)
