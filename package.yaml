@@ -81,6 +81,7 @@ dependencies:
   - megaparsec
   - optics
   - parser-combinators
+  - scientific
   - string-interpolate
   - vector
   - witch

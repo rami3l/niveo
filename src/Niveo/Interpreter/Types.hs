@@ -9,7 +9,12 @@ module Niveo.Interpreter.Types
   )
 where
 
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Char (toLower)
+import Data.Map.Optics (toMapOf)
+import Data.Scientific qualified as Scientific
 import Data.String.Interpolate
 import Effectful
 import Effectful.Error.Static
@@ -26,7 +31,8 @@ import Niveo.Parser
     TokenType (..),
   )
 import Niveo.Utils (sepByComma, showRealFrac)
-import Optics.TH (makeFieldLabelsNoPrefix)
+import Optics
+import Relude.Extra (bimapF)
 import Relude.Unsafe (read)
 import Witch
 import Prelude hiding (Reader, show)
@@ -46,6 +52,35 @@ data Val
   | VLambda {params :: ![Token], body :: Expr, env :: Env}
   | VHostFun HostFun
   deriving (Eq)
+
+instance TryFrom Val Aeson.Value where
+  tryFrom VNull = Right Aeson.Null
+  tryFrom (VBool b) = Right $ Aeson.toJSON b
+  tryFrom (VNum n) = Right $ Aeson.toJSON n
+  tryFrom (VStr s) = Right $ Aeson.toJSON s
+  tryFrom v = case v of
+    VList vs -> maybeInto `traverse` vs <&> Aeson.toJSON & maybeToRight abort
+    VStruct kvs ->
+      kvs
+        & traverse (bitraverse extractString maybeInto)
+        -- https://hackage.haskell.org/package/optics-core-0.4.1/docs/Data-Map-Optics.html#v:toMapOf
+        <&> toMapOf (folded % ifolded)
+        <&> Aeson.toJSON
+        & maybeToRight abort
+    _ -> Left abort
+    where
+      maybeInto = rightToMaybe . tryInto @Aeson.Value
+      abort = TryFromException v Nothing
+      extractString (NStr s) = Just s
+      extractString _ = Nothing
+
+instance From Aeson.Value Val where
+  from Aeson.Null = VNull
+  from (Aeson.Bool b) = VBool b
+  from (Aeson.Number n) = VNum $ Scientific.toRealFloat n
+  from (Aeson.String s) = VStr s
+  from (Aeson.Array vs) = VList . from $ into @Val <$> vs
+  from (Aeson.Object kvs) = VStruct . from $ bimapF (NStr . Key.toText) (into @Val) (KeyMap.toList kvs)
 
 instance From Lit Val where
   from (Lit LNull _) = VNull
