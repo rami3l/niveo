@@ -91,6 +91,7 @@ library
     , optics
     , parser-combinators
     , relude
+    , scientific
     , string-interpolate
     , vector
     , witch
@@ -164,6 +165,7 @@ executable niveo-exe
     , optparse-applicative
     , parser-combinators
     , relude
+    , scientific
     , string-interpolate
     , vector
     , witch
@@ -241,6 +243,7 @@ test-suite niveo-test
     , parser-combinators
     , regex-tdfa
     , relude
+    , scientific
     , string-interpolate
     , tasty
     , tasty-hunit
