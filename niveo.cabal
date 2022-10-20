@@ -80,6 +80,7 @@ library
   ghc-options: -Wall -Wno-unticked-promoted-constructors -fplugin=Effectful.Plugin
   build-depends:
       aeson
+    , aeson-pretty
     , base >=4.7 && <5
     , bimap
     , data-default
@@ -154,6 +155,7 @@ executable niveo-exe
   ghc-options: -Wall -Wno-unticked-promoted-constructors -fplugin=Effectful.Plugin -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
+    , aeson-pretty
     , base >=4.7 && <5
     , bimap
     , data-default
@@ -236,6 +238,7 @@ test-suite niveo-test
       tasty-discover:tasty-discover
   build-depends:
       aeson
+    , aeson-pretty
     , base >=4.7 && <5
     , bimap
     , data-default

@@ -72,6 +72,7 @@ dependencies:
       - (Relude as Prelude)
       - ""
   - aeson
+  - aeson-pretty
   - bimap
   - data-default
   - diagnose

@@ -7,6 +7,7 @@ where
 import Control.Applicative.Combinators (choice)
 import Control.Monad.Catch (MonadCatch, catch)
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Encode.Pretty qualified as AesonPretty
 import Data.Default (Default (..))
 import Data.String.Interpolate
 import Effectful
@@ -68,7 +69,7 @@ dispatch a = case a.mode of
           case a.exportFmt of
             Nothing -> unless isREPL . outputStrLn $ show @String v
             Just JSON ->
-              (intoAeson v >>= putLBSLn . Aeson.encode)
+              (intoAeson v >>= putLBSLn . AesonPretty.encodePretty)
                 `catch` \(StringException s _) -> do
                   printErr $ diagnosticFromCtx ctx (into s) []
                   unless isREPL exitFailure
