@@ -45,7 +45,9 @@ library
       BlockArguments
       ConstraintKinds
       DataKinds
+      DeriveAnyClass
       DeriveGeneric
+      DerivingStrategies
       DuplicateRecordFields
       ExtendedDefaultRules
       FlexibleContexts
@@ -93,6 +95,7 @@ library
     , relude
     , scientific
     , string-interpolate
+    , unliftio
     , vector
     , witch
   mixins:
@@ -116,7 +119,9 @@ executable niveo-exe
       BlockArguments
       ConstraintKinds
       DataKinds
+      DeriveAnyClass
       DeriveGeneric
+      DerivingStrategies
       DuplicateRecordFields
       ExtendedDefaultRules
       FlexibleContexts
@@ -167,6 +172,7 @@ executable niveo-exe
     , relude
     , scientific
     , string-interpolate
+    , unliftio
     , vector
     , witch
   mixins:
@@ -193,7 +199,9 @@ test-suite niveo-test
       BlockArguments
       ConstraintKinds
       DataKinds
+      DeriveAnyClass
       DeriveGeneric
+      DerivingStrategies
       DuplicateRecordFields
       ExtendedDefaultRules
       FlexibleContexts
@@ -248,6 +256,7 @@ test-suite niveo-test
     , tasty
     , tasty-hunit
     , tasty-quickcheck
+    , unliftio
     , vector
     , witch
   mixins:

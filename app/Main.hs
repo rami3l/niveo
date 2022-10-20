@@ -13,4 +13,4 @@ main :: IO ()
 main = execParser opts >>= dispatch
   where
     opts = (args <**> helper) `info` infoMod
-    infoMod = fullDesc <> header "niveo - A programmable configuration language."
+    infoMod = fullDesc <> header "niveo - A minimalistic programmable configuration language."

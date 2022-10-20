@@ -1,11 +1,13 @@
 {
   "cSpell.words": [
     "Aeson",
+    "AREPL",
     "Bimap",
     "bitraverse",
     "Brack",
     "Effectful",
     "Haskeline",
+    "ifolded",
     "mempty",
     "Niveo",
     "Paren",
@@ -14,6 +16,7 @@
     "Serde",
     "struct",
     "uncurry",
+    "Unlift",
     "unwords"
   ]
 }
