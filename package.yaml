@@ -27,7 +27,9 @@ default-extensions:
   - BlockArguments
   - ConstraintKinds
   - DataKinds
+  - DeriveAnyClass
   - DeriveGeneric
+  - DerivingStrategies
   - DuplicateRecordFields
   - ExtendedDefaultRules
   - FlexibleContexts
@@ -83,6 +85,7 @@ dependencies:
   - parser-combinators
   - scientific
   - string-interpolate
+  - unliftio
   - vector
   - witch
 
