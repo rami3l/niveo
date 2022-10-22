@@ -12,6 +12,7 @@ where
 
 import Control.Monad (foldM)
 import Control.Monad.Fix (mfix)
+import Data.Aeson qualified as Aeson
 import Data.Default (Default (def))
 import Data.Map.Strict qualified as Map
 import Data.Sequence qualified as Seq
@@ -184,6 +185,7 @@ prelude = Env {dict = prelude'}
       Map.fromList $
         second VHostFun . toFst (.name)
           <$> [ HostFun "import" import_,
+                HostFun "import_json" importJSON,
                 HostFun "get" get_,
                 HostFun "prepend" prepend,
                 HostFun "delete" delete,
@@ -199,6 +201,13 @@ import_ _ [VStr fin] = do
 -- Atom for outside of prelude.
 -- TODO: Support atoms.
 import_ range vs = unexpectedArgs range "(name)" vs
+
+importJSON :: RawHostFun
+importJSON range [VStr fin] = do
+  let invalidJSON = throwReport "invalid import" [(range, This [i|`#{fin}` doesn't seem to be a valid JSON file|])]
+  src <- readFile (into fin)
+  Aeson.decode @Aeson.Value (into src) <&> into @Val & maybe invalidJSON pure
+importJSON range vs = unexpectedArgs range "(name)" vs
 
 get_ :: RawHostFun
 get_ range vs =
