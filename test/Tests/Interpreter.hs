@@ -1,5 +1,6 @@
 module Tests.Interpreter where
 
+import Data.Aeson qualified as Aeson
 import Data.Default (def)
 import Data.Map.Strict qualified as Map
 import Data.String.Interpolate
@@ -11,7 +12,9 @@ import Niveo.Interpreter (Context (..), Val, evalTxt, throwReport)
 import Niveo.Interpreter.FileSystem (FSMap, FsError (..), runFileSystemPure)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (Assertion, testCase)
+import Test.Tasty.QuickCheck (testProperty)
 import Tests.Common
+import Witch
 import Prelude hiding (runReader)
 
 evalTxtTest :: FSMap -> Text -> Either Text Text
@@ -171,7 +174,7 @@ test_call =
 test_import :: TestTree
 test_import =
   testGroup
-    "Should handle imports"
+    "Should handle imports & exports properly"
     [ testCase "with simple import" do
         [i|import("three.niv") + 39|] `assertEval'` "42"
         [i|import("four.niv") + 38|] `assertEvalError'` "file `four.niv` not found",
@@ -179,7 +182,9 @@ test_import =
         [i|let s = import("struct.niv"); s.three * s::four|] `assertEval'` "12",
       testCase "with JSON import" do
         [i|let s = import_json("joe.json"); s.age|] `assertEval'` "12"
-        [i|import_json("three.niv")|] `assertEvalError'` "`three.niv` doesn't seem to be a valid JSON file"
+        [i|import_json("three.niv")|] `assertEvalError'` "`three.niv` doesn't seem to be a valid JSON file",
+      testProperty "can loselessly convert `Aeson.Value` to `Val` and back" $
+        \(v :: Aeson.Value) -> v & into @Val & tryInto @Aeson.Value & either (const False) (== v)
     ]
   where
     assertEval' = assertEvalFS fs
