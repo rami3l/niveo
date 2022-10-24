@@ -17,6 +17,7 @@ import Data.Default (Default (def))
 import Data.Map.Strict qualified as Map
 import Data.Sequence qualified as Seq
 import Data.String.Interpolate
+import Data.Text qualified as Text
 import Data.Tuple.Optics
 import Effectful
 import Effectful.Error.Static
@@ -186,6 +187,7 @@ prelude = Env {dict = prelude'}
         second VHostFun . toFst (.name)
           <$> [ HostFun "import" import_,
                 HostFun "import_json" importJSON,
+                HostFun "to_string" toString_,
                 HostFun "get" get_,
                 HostFun "prepend" prepend,
                 HostFun "delete" delete,
@@ -208,6 +210,9 @@ importJSON range [VStr fin] = do
   src <- readFile (into fin)
   Aeson.decode @Aeson.Value (into src) <&> into @Val & maybe invalidJSON pure
 importJSON range vs = unexpectedArgs range "(name)" vs
+
+toString_ :: RawHostFun
+toString_ _ vs = vs <&> (\case VStr s -> s; v -> show v) & Text.concat & VStr & pure
 
 get_ :: RawHostFun
 get_ range vs =
