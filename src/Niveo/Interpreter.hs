@@ -91,14 +91,14 @@ eval expr@(EBinary {lhs, op, rhs}) = do
             [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
 eval (ECall {callee, args}) =
   (callee, args) & bitraverse eval (eval `traverse`) >>= \case
-    (VLambda params body env, args') ->
+    (VLambda params body ctx, args') ->
       if length params == length args
         then
-          let localEnv = env & #dict %~ (Map.union . Map.fromList $ (params <&> (.lexeme)) `zip` args')
-           in eval body & local @Context (#env .~ localEnv)
+          let localEnv = ctx.env & #dict %~ (Map.union . Map.fromList $ (params <&> (.lexeme)) `zip` args')
+           in eval body & local @Context (const ctx {env = localEnv})
         else unexpectedArgs callee.range [i|(#{sepByComma params})|] args'
     (VHostFun (HostFun {fun}), args') -> fun callee.range args'
-    _ -> throwReport "invalid call" [(callee.range, This [i|`#{callee}` is not callable|])]
+    (callee', _) -> throwReport "invalid call" [(callee.range, This [i|`#{callee'}` is not callable|])]
 eval (EIndex {this, idx}) =
   let noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
       noIndex len' n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len'} but the index is `#{n'}`|])]
@@ -139,7 +139,7 @@ eval (ELet {kw, defs, val}) =
             ctx' & #env % #dict %~ Map.insert ident'.lexeme def'' & pure
       ctx' <- defs & foldM ctxUpdate ctx
       eval val & local (const ctx')
-eval (ELambda {params, body}) = asks @Context $ VLambda params body . (.env)
+eval (ELambda {params, body}) = asks @Context $ VLambda params body
 eval (EStruct {kvs}) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
   where
     evalName expr' =
