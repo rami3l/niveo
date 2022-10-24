@@ -49,7 +49,7 @@ data Val
     VStruct (Seq (Name, Val))
   | -- Extra types.
     VAtom !Text
-  | VLambda {params :: ![Token], body :: Expr, env :: Env}
+  | VLambda {params :: ![Token], body :: Expr, ctx :: Context}
   | VHostFun HostFun
   deriving (Eq)
 
@@ -123,7 +123,7 @@ data Context = Context
     fin :: FilePath,
     src :: Text
   }
-  deriving (Generic)
+  deriving (Generic, Eq)
 
 type EvalEs =
   [ Error (Diagnostic Text),
