@@ -219,10 +219,9 @@ ident, atom :: Parser Token
 ident = toTokenParser TIdent ident' <?> "identifier"
   where
     ident' = lexeme . try $ check . toText =<< identStr
-    check str =
-      if str `Bimap.memberR` kws
-        then fail [i|keyword `#{str}` cannot be an identifier|]
-        else pure str
+    check str
+      | str `Bimap.memberR` kws = fail [i|keyword `#{str}` cannot be an identifier|]
+      | otherwise = pure str
 atom = toTokenParser TAtom atom' <?> "atom"
   where
     atom' = lexeme . try $ toText <$> (char '\'' *> identStr)
