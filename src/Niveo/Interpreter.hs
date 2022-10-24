@@ -101,7 +101,7 @@ eval (ECall {callee, args}) =
     _ -> throwReport "invalid call" [(callee.range, This [i|`#{callee}` is not callable|])]
 eval (EIndex {this, idx}) =
   let noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
-      noIndex len n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len} but the index is `#{n'}`|])]
+      noIndex len' n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len'} but the index is `#{n'}`|])]
       findKV keyP kvs = kvs & find (keyP . fst) & maybe (noEntry idx) (pure . snd)
    in traverseBoth eval (this, idx) >>= \case
         (VList l, VNum n) ->
@@ -188,6 +188,11 @@ prelude = Env {dict = prelude'}
           <$> [ HostFun "import" import_,
                 HostFun "import_json" importJSON,
                 HostFun "to_string" toString_,
+                HostFun "len" len,
+                HostFun "head" head_,
+                HostFun "tail" tail_,
+                HostFun "init" init_,
+                HostFun "last" last_,
                 HostFun "get" get_,
                 HostFun "prepend" prepend,
                 HostFun "delete" delete,
@@ -213,6 +218,20 @@ importJSON range vs = unexpectedArgs range "(name)" vs
 
 toString_ :: RawHostFun
 toString_ _ vs = vs <&> (\case VStr s -> s; v -> show v) & Text.concat & VStr & pure
+
+len :: RawHostFun
+len _ [VList l] = pure . VNum . fromIntegral . length $ l
+len range vs = unexpectedArgs range "(list)" vs
+
+head_, tail_, init_, last_ :: RawHostFun
+head_ _ [VList (v Seq.:<| _)] = pure v
+head_ range vs = unexpectedArgs range "(non_empty_list)" vs
+tail_ _ [VList (_ Seq.:<| vs)] = pure . VList $ vs
+tail_ range vs = unexpectedArgs range "(non_empty_list)" vs
+init_ _ [VList (vs Seq.:|> _)] = pure . VList $ vs
+init_ range vs = unexpectedArgs range "(non_empty_list)" vs
+last_ _ [VList (_ Seq.:|> v)] = pure v
+last_ range vs = unexpectedArgs range "(non_empty_list)" vs
 
 get_ :: RawHostFun
 get_ range vs =

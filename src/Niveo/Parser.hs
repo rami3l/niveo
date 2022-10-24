@@ -277,20 +277,23 @@ data Expr
   | EError !Token
   deriving (Eq)
 
+instance HasField "tk" Expr Token where
+  getField e@(EUnary {}) = e.op
+  getField e@(EBinary {}) = e.op
+  getField e@(ECall {}) = e.end
+  getField e@(EIndex {}) = e.end
+  getField e@(EParen {}) = e.end
+  getField e@(EList {}) = e.end
+  getField e@(EIfElse {}) = e.kw
+  getField e@(ELet {}) = e.kw
+  getField e@(ELambda {}) = e.kw
+  getField e@(EStruct {}) = e.kw
+  getField (ELit lit) = lit.tk
+  getField (EVar var) = var
+  getField (EError tk) = tk
+
 instance HasField "range" Expr Error.Diagnose.Position where
-  getField e@(EUnary {}) = e.op.range
-  getField e@(EBinary {}) = e.op.range
-  getField e@(ECall {}) = e.end.range
-  getField e@(EIndex {}) = e.end.range
-  getField e@(EParen {}) = e.end.range
-  getField e@(EList {}) = e.end.range
-  getField e@(EIfElse {}) = e.kw.range
-  getField e@(ELet {}) = e.kw.range
-  getField e@(ELambda {}) = e.kw.range
-  getField e@(EStruct {}) = e.kw.range
-  getField (ELit lit) = lit.range
-  getField (EVar var) = var.range
-  getField (EError tk) = tk.range
+  getField e = e.tk.range
 
 instance Show Expr where
   show (EUnary {op = op', rhs}) = [i|(#{op'} #{rhs})|]
@@ -433,9 +436,12 @@ logicAnd = toInfixLParser equality \c ->
   EBinary c <$> op TAmp2 <*> equality
 logicOr = toInfixLParser logicAnd \c ->
   EBinary c <$> op TPipe2 <*> logicAnd
-piped = toInfixLParser logicOr \c -> do
-  callee <- op TPipeGt *> (primary <?> "callee")
-  ECall callee <$> (op TLParen *> ((c :) <$> callArgs)) <*> op TRParen
+piped = toInfixLParser logicOr \c ->
+  op TPipeGt *> (call <?> "partial call") <&> \case
+    -- `e |> f(as...)` => `f(e, as...)`
+    e@(ECall {args = as}) -> e {args = c : as}
+    -- `e |> f` => `f(e)`
+    e -> ECall e (one c) e.tk
 
 expression :: Parser Expr
 expression = piped <?> "expression"

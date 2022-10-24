@@ -1,0 +1,7 @@
+letrec map = fun(xs, f) {
+    if (xs == []) [] else [xs |> head() |> f()] + (xs |> tail() |> map(f))
+};
+
+struct{
+    'map,
+}
