@@ -6,6 +6,8 @@
     "bitraverse",
     "Brack",
     "Effectful",
+    "foldl",
+    "foldr",
     "Haskeline",
     "ifolded",
     "mempty",

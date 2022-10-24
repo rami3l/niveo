@@ -1,7 +1,35 @@
 letrec map = fun(xs, f) {
-    if (xs == []) [] else [xs |> head() |> f()] + (xs |> tail() |> map(f))
+    if (xs == []) [] else {
+        [f(head(xs))] + (tail(xs) |> map(f))
+    }
+};
+
+letrec filter = fun(xs, f) {
+    if (xs == []) [] else {
+        let h = head(xs);
+        if (f(h)) {
+            [h] + (tail(xs) |> filter(f))
+        } else {
+            tail(xs) |> filter(f)
+        }
+    }
+};
+
+letrec foldl = fun(xs, acc, f) {
+    if (xs == []) acc else {
+        tail(xs) |> foldl(acc |> f(head(xs)), f)
+    }
+};
+
+letrec foldr = fun(xs, acc, f) {
+    if (xs == []) acc else {
+        init(xs) |> foldr(acc |> f(last(xs)), f)
+    }
 };
 
 struct{
     'map,
+    'filter,
+    'foldl,
+    'foldr,
 }
