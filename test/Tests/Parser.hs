@@ -131,7 +131,9 @@ test_call =
         "let f = g(); f()" `assertExpr` [i|(let ((f (g))) (f))|]
         "letrec f = fun() {f()}; f()" `assertExpr` [i|(letrec ((f (lambda '() (f)))) (f))|],
       testCase "with pipes" do
-        "a || b |> f()" `assertExpr` "(f (|| a b))"
+        "a || b |> g.f()" `assertExpr` [i|((@ g "f") (|| a b))|]
+        "a || b |> g.f" `assertExpr` [i|((@ g "f") (|| a b))|]
+        "a || b |> g.f(42)" `assertExpr` [i|((@ g "f") (|| a b) 42)|]
         "1 |> fun(a) {a + 1}(2,3) |> (g |> h(3.5))(what[4])"
           `assertExpr` "((h g 3.5) ((lambda (a) (+ a 1)) 1 2 3) (@ what 4))"
     ]
