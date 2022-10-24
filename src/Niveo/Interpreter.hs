@@ -41,6 +41,7 @@ import Optics (Ixed (ix), at, (%))
 import Optics.Operators
 import Optics.Operators.Unsafe
 import Relude.Extra (toFst, traverseBoth)
+import System.FilePath (normalise, takeDirectory, (</>))
 import Witch
 import Prelude hiding (ask, asks, local, readFile)
 
@@ -91,12 +92,11 @@ eval expr@(EBinary {lhs, op, rhs}) = do
             [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
 eval (ECall {callee, args}) =
   (callee, args) & bitraverse eval (eval `traverse`) >>= \case
-    (VLambda params body ctx, args') ->
-      if length params == length args
-        then
+    (VLambda params body ctx, args')
+      | length params == length args ->
           let localEnv = ctx.env & #dict %~ (Map.union . Map.fromList $ (params <&> (.lexeme)) `zip` args')
            in eval body & local @Context (const ctx {env = localEnv})
-        else unexpectedArgs callee.range [i|(#{sepByComma params})|] args'
+      | otherwise -> unexpectedArgs callee.range [i|(#{sepByComma params})|] args'
     (VHostFun (HostFun {fun}), args') -> fun callee.range args'
     (callee', _) -> throwReport "invalid call" [(callee.range, This [i|`#{callee'}` is not callable|])]
 eval (EIndex {this, idx}) =
@@ -121,10 +121,9 @@ eval (EIfElse {cond, then_, else_}) =
   eval cond >>= \case
     (VBool cond') -> eval $ if cond' then then_ else else_
     cond' -> unexpectedTy cond.range "boolean" cond'
-eval (ELet {kw, defs, val}) =
-  -- Following the French CAML tradition here: https://stackoverflow.com/a/1891573
-  if kw.type_ == TLetrec
-    then do
+eval (ELet {kw, defs, val})
+  | kw.type_ == TLetrec = do
+      -- Following the French CAML tradition here: https://stackoverflow.com/a/1891573
       let define (defs' :: NonEmpty (Token, Val)) =
             let defs'' = Map.fromList $ first (.lexeme) <$> into @[(Token, Val)] defs'
              in #env % #dict %~ Map.union defs''
@@ -132,7 +131,7 @@ eval (ELet {kw, defs, val}) =
         defs & traverse \(ident', def') ->
           eval def' & local @Context (define defs') <&> (ident',)
       eval val & local @Context (define defs')
-    else do
+  | otherwise = do
       ctx <- ask @Context
       let ctxUpdate ctx' (ident', def') = do
             def'' <- eval def' & local (const ctx')
@@ -202,17 +201,20 @@ prelude = Env {dict = prelude'}
 
 import_ :: RawHostFun
 import_ _ [VStr fin] = do
-  src <- readFile (into fin)
-  let ctx = Context {env = def, fin = into fin, src = into src}
-  evalTxt & local (const ctx)
+  ctx <- ask @Context
+  let fin' = normalise $ takeDirectory ctx.fin </> into fin
+  src <- readFile fin'
+  let ctx' = Context {env = def, fin = fin', src = into src}
+  evalTxt & local (const ctx')
 -- Atom for outside of prelude.
 -- TODO: Support atoms.
 import_ range vs = unexpectedArgs range "(name)" vs
 
 importJSON :: RawHostFun
 importJSON range [VStr fin] = do
+  ctx <- ask @Context
   let invalidJSON = throwReport "invalid import" [(range, This [i|`#{fin}` doesn't seem to be a valid JSON file|])]
-  src <- readFile (into fin)
+  src <- readFile . normalise $ takeDirectory ctx.fin </> into fin
   Aeson.decode @Aeson.Value (into src) <&> into @Val & maybe invalidJSON pure
 importJSON range vs = unexpectedArgs range "(name)" vs
 

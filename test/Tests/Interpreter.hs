@@ -177,9 +177,9 @@ test_import =
     "Should handle imports & exports properly"
     [ testCase "with simple import" do
         [i|import("three.niv") + 39|] `assertEval'` "42"
-        [i|import("four.niv") + 38|] `assertEvalError'` "file `four.niv` not found",
+        [i|import("../../four.niv") + 38|] `assertEvalError'` "file `../../four.niv` not found",
       testCase "with nested import" $
-        [i|let s = import("struct.niv"); to_string(s.three, ", ", s::four)|] `assertEval'` [i|"3, 4"|],
+        [i|let s = import("foo/struct.niv"); to_string(s.three, ", ", s::four)|] `assertEval'` [i|"3, 4"|],
       testCase "with JSON import" do
         [i|let s = import_json("joe.json"); s.age|] `assertEval'` "12"
         [i|import_json("three.niv")|] `assertEvalError'` "`three.niv` doesn't seem to be a valid JSON file",
@@ -192,9 +192,9 @@ test_import =
     fs =
       Map.fromList
         [ ("three.niv", "3"),
-          ( "struct.niv",
+          ( "foo/struct.niv",
             [__i|
-              let three = import("three.niv");
+              let three = import("./bar/../../three.niv");
               let incr = fun(x) { x+1 };
               let four = incr(three);
               struct {

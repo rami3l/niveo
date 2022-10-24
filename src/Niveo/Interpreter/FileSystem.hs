@@ -11,6 +11,7 @@ where
 
 import Control.Exception (IOException)
 import Control.Monad.Catch
+import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.String.Interpolate
 import Effectful
@@ -18,6 +19,8 @@ import Effectful.Dispatch.Dynamic
 import Effectful.Error.Static
 import Effectful.State.Static.Local
 import Effectful.TH
+import Optics
+import System.FilePath (joinPath, normalise, splitPath)
 import System.IO qualified as IO
 import Prelude hiding (evalState, gets, modify, readFile, writeFile)
 
@@ -58,5 +61,17 @@ runFileSystemPure ::
   Eff es a
 runFileSystemPure fs0 = reinterpret (evalState fs0) $ const \case
   ReadFile path ->
-    gets (Map.!? path) >>= maybe (throwError $ FsError [i|file `#{path}` not found|]) pure
+    let path' = joinPath . simplifyPath . splitPath . normalise $ path
+     in gets (Map.!? path') >>= maybe (throwError $ FsError [i|file `#{path}` not found|]) pure
   WriteFile path contents -> modify $ Map.insert path contents
+  where
+    simplifyPath xs = let (lft, rgt) = xs & span isDot2 in lft <> simplifyPath' rgt
+    simplifyPath' [] = []
+    simplifyPath' xs@(_ : tl) =
+      -- We assume that in this fake FS there are no symlinks, so the following equation holds:
+      -- x/y/../z == x/z
+      tl
+        & List.findIndex isDot2
+        -- Remove `y` at `idx` and `..` at `idx+1`.
+        & maybe xs (\idx -> simplifyPath' . toListOf (elements (`notElem` [idx, idx + 1])) $ xs)
+    isDot2 = (`elem` ["../" :: String, "..\\"])
