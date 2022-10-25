@@ -81,6 +81,7 @@ dependencies:
   - effectful-th
   - exceptions
   - extra
+  - file-embed
   - filepath
   - megaparsec
   - optics

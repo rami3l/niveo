@@ -29,6 +29,7 @@ library
       Niveo.Instances
       Niveo.Interpreter
       Niveo.Interpreter.FileSystem
+      Niveo.Interpreter.Std
       Niveo.Interpreter.Types
       Niveo.Interpreter.Utils
       Niveo.Parser
@@ -90,6 +91,7 @@ library
     , effectful-th
     , exceptions
     , extra
+    , file-embed
     , filepath
     , megaparsec
     , optics
@@ -166,6 +168,7 @@ executable niveo-exe
     , effectful-th
     , exceptions
     , extra
+    , file-embed
     , filepath
     , haskeline
     , megaparsec
@@ -250,6 +253,7 @@ test-suite niveo-test
     , effectful-th
     , exceptions
     , extra
+    , file-embed
     , filepath
     , megaparsec
     , niveo

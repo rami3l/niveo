@@ -26,6 +26,7 @@ import Error.Diagnose (Marker (This))
 import Error.Diagnose.Position (Position)
 import Niveo.Instances ()
 import Niveo.Interpreter.FileSystem (readFile)
+import Niveo.Interpreter.Std (stdMod)
 import Niveo.Interpreter.Types
 import Niveo.Interpreter.Utils (throwReport)
 import Niveo.Parser
@@ -41,7 +42,7 @@ import Optics (Ixed (ix), at, (%))
 import Optics.Operators
 import Optics.Operators.Unsafe
 import Relude.Extra (toFst, traverseBoth)
-import System.FilePath (normalise, takeDirectory, (</>))
+import System.FilePath (hasExtension, normalise, takeDirectory, (</>))
 import Witch
 import Prelude hiding (ask, asks, local, readFile)
 
@@ -200,14 +201,22 @@ prelude = Env {dict = prelude'}
               ]
 
 import_ :: RawHostFun
-import_ _ [VStr fin] = do
-  ctx <- ask @Context
-  let fin' = normalise $ takeDirectory ctx.fin </> into fin
-  src <- readFile fin'
-  let ctx' = Context {env = def, fin = fin', src = into src}
-  evalTxt & local (const ctx')
--- Atom for outside of prelude.
--- TODO: Support atoms.
+import_ range [VStr fin] = do
+  -- We assume that a source file is imported if `fin` has an extension.
+  ctx <-
+    if into fin & hasExtension
+      then do
+        dir <- asks @Context $ takeDirectory . (.fin)
+        let fin' = normalise $ dir </> into fin
+        src <- readFile fin'
+        pure Context {env = def, fin = fin', src = into src}
+      else do
+        -- Otherwise, we're importing a module.
+        -- As for now, the only available module is std.
+        let mod' = stdMod fin
+        let invalidModule = throwReport "invalid import" [(range, This [i|`#{fin} doesn't seem to be a valid source or module`|])]
+        mod' & maybe invalidModule (\src -> pure Context {env = def, fin = into fin, src})
+  evalTxt & local (const ctx)
 import_ range vs = unexpectedArgs range "(name)" vs
 
 importJSON :: RawHostFun
