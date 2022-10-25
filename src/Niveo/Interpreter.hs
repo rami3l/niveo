@@ -103,19 +103,31 @@ eval (ECall {callee, args}) =
 eval (EIndex {this, idx}) =
   let noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
       noIndex len' n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len'} but the index is `#{n'}`|])]
-      findKV keyP kvs = kvs & find (keyP . fst) & maybe (noEntry idx) (pure . snd)
-   in traverseBoth eval (this, idx) >>= \case
-        (VList l, VNum n) ->
-          tryInto @Int n
-            & either
-              (const $ unexpectedTy idx.range "integer" n)
-              (\n' -> l ^? ix n' & maybe (noIndex (Seq.length l) n') pure)
-        (VStruct kvs, VStr s) -> kvs & findKV (== NStr s)
-        (VStruct kvs, VAtom s) -> kvs & findKV (== NAtom s)
-        (this', idx') ->
-          throwReport
-            "mismatched types"
-            [(idx.range, This [i|could not apply `[]` to `(#{this'}, #{idx'})`|])]
+   in do
+        (this', idx') <- traverseBoth eval (this, idx)
+        let abort =
+              throwReport
+                "mismatched types"
+                [(idx.range, This [i|could not apply `[]` to `(#{this'}, #{idx'})`|])]
+        let l `index` i' =
+              case i' of
+                VNum n ->
+                  tryInto @Int n
+                    & either
+                      (const $ unexpectedTy idx.range "integer" n)
+                      (\n' -> l ^? ix n' & maybe (noIndex (Seq.length l) n') pure)
+                _ -> abort
+        let kvs `search` k =
+              tryInto @Name k
+                & either
+                  (const $ unexpectedTy idx.range "name" k)
+                  (maybe (noEntry k) (\idx'' -> kvs ^?! ix idx'' & snd & pure) . (`structFindIndex` kvs))
+        case (this', idx') of
+          (VList l, VList is) -> is & traverse (l `index`) <&> VList
+          (VList l, i') -> l `index` i'
+          (VStruct kvs, VList ks) -> ks & traverse (kvs `search`) <&> VList
+          (VStruct kvs, k) -> kvs `search` k
+          _ -> abort
 eval (EParen {inner}) = eval inner
 eval (EList {exprs}) = VList . from <$> eval `traverse` exprs
 eval (EIfElse {cond, then_, else_}) =
@@ -189,6 +201,8 @@ prelude = Env {dict = prelude'}
                 HostFun "import_json" importJSON,
                 HostFun "to_string" toString_,
                 HostFun "len" len,
+                HostFun "range" range_,
+                HostFun "reverse" reverse_,
                 HostFun "head" head_,
                 HostFun "tail" tail_,
                 HostFun "init" init_,
@@ -230,9 +244,18 @@ importJSON range vs = unexpectedArgs range "(name)" vs
 toString_ :: RawHostFun
 toString_ _ vs = vs <&> (\case VStr s -> s; v -> show v) & Text.concat & VStr & pure
 
-len :: RawHostFun
+len, range_, reverse_ :: RawHostFun
 len _ [VList l] = pure . VNum . fromIntegral . length $ l
 len range vs = unexpectedArgs range "(list)" vs
+range_ range vs =
+  let abort = unexpectedArgs range "(int, int)" vs
+   in case vs of
+        [VNum x, VNum y] -> do
+          (x', y') <- traverseBoth (either (const $ unexpectedArgs range "(int, int)" vs) pure . tryInto @Int) (x, y)
+          pure . VList . from $ VNum . fromIntegral <$> [x' .. y' - 1]
+        _ -> abort
+reverse_ _ [VList l] = pure . VList $ Seq.reverse l
+reverse_ range vs = unexpectedArgs range "(list)" vs
 
 head_, tail_, init_, last_ :: RawHostFun
 head_ _ [VList (v Seq.:<| _)] = pure v
@@ -246,16 +269,21 @@ last_ range vs = unexpectedArgs range "(non_empty_list)" vs
 
 get_ :: RawHostFun
 get_ range vs =
-  let abort = unexpectedArgs range "(list, int) | (struct, name)" vs
+  let abort = unexpectedArgs range "(list, int | list(int)) | (struct, name | list(name))" vs
+      l `index` VNum n =
+        tryInto @Int n
+          & either (const abort) (\n' -> l ^? ix n' & fromMaybe VNull & pure)
+      _ `index` _ = abort
+      kvs `search` k =
+        tryInto @Name k
+          & either
+            (const abort)
+            (pure . maybe VNull (\idx -> kvs ^?! ix idx & snd) . (`structFindIndex` kvs))
    in case vs of
-        [VList l, VNum n] ->
-          tryInto @Int n
-            & either (const abort) (\n' -> l ^? ix n' & fromMaybe VNull & pure)
-        [VStruct kvs, k] ->
-          tryInto @Name k
-            & either
-              (const abort)
-              (pure . maybe VNull (\idx -> kvs ^?! ix idx & snd) . (`structFindIndex` kvs))
+        [VList l, VList is] -> is & traverse (l `index`) <&> VList
+        [VList l, i'] -> l `index` i'
+        [VStruct kvs, VList ks] -> ks & traverse (kvs `search`) <&> VList
+        [VStruct kvs, k] -> kvs `search` k
         _ -> abort
 
 prepend :: RawHostFun

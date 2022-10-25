@@ -84,8 +84,8 @@ test_coll =
     [ testCase "with list concat" $
         "['what, 'is] + ['love]" `assertEval` "['what, 'is, 'love]",
       testCase "with list indexing" do
-        "[0, 1, 2, 3][3]" `assertEval` "3"
-        "[0, 1, 2, 3][4]" `assertEvalError` "index out of bounds",
+        "range(0, 4)[3]" `assertEval` "3"
+        "range(0, 4)[4]" `assertEvalError` "index out of bounds",
       testCase "with struct" do
         [i|struct{"foo" + "bar" = 4.2, "ba z" = true && false}|]
           `assertEval` [i|struct{"foobar" = 4.2, "ba z" = false}|]
@@ -110,9 +110,11 @@ test_coll =
         let l = "[0, 1, 22, 333]"
         (l <> "|> get(2)") `assertEval` "22"
         (l <> "|> get(22)") `assertEval` "null"
-        let s = "struct{'foo = 40, 'bar = 42}"
+        (l <> "|> get([2,3,-1])") `assertEval` "[22, 333, null]"
+        let s = "struct{'foo = 40, 'bar = 42, 'foo = 4}"
         (s <> "|> get('bar)") `assertEval` "42"
-        (s <> [i||> get("bar")|]) `assertEval` "null",
+        (s <> [i||> get("bar")|]) `assertEval` "null"
+        (s <> "|> get(['baz, 'foo])") `assertEval` "[null, 40]",
       testCase "with prelude function `prepend`" $
         "struct{'foo = 40, 'bar = 42} |> prepend('bar, 10086)"
           `assertEval` "struct{'bar = 10086, 'foo = 40, 'bar = 42}",
