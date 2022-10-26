@@ -5,6 +5,7 @@ module Niveo.Interpreter.Types
     Context (..),
     EvalEs,
     RawHostFun,
+    RawHostFun1,
     HostFun (..),
   )
 where
@@ -131,7 +132,9 @@ type EvalEs =
     Reader Context
   ]
 
-type RawHostFun = forall es. EvalEs :>> es => Position -> [Val] -> Eff es Val
+type RawHostFun = forall es. RawHostFun1 es
+
+type RawHostFun1 es = EvalEs :>> es => Position -> [Val] -> Eff es Val
 
 data HostFun = HostFun
   { name :: !Text,
