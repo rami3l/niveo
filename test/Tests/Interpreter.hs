@@ -82,10 +82,21 @@ test_coll =
   testGroup
     "Should evaluate collection literals and operations"
     [ testCase "with list concat" $
-        "['what, 'is] + ['love]" `assertEval` "['what, 'is, 'love]",
+        "['what,'is] + ['love]" `assertEval` "['what, 'is, 'love]",
+      testCase "with string concat" $
+        [i|"what is " + "love"|] `assertEval` [i|"what is love"|],
       testCase "with list indexing" do
         "range(0, 4)[3]" `assertEval` "3"
-        "range(0, 4)[4]" `assertEvalError` "index out of bounds",
+        "range(0, 4)[[1,3]]" `assertEval` "[1, 3]"
+        "range(0, 4)[-1]" `assertEvalError` "index out of bounds"
+        "range(0, 4)[4]" `assertEvalError` "index out of bounds"
+        "range(0, 4)[[1,4]]" `assertEvalError` "index out of bounds",
+      testCase "with string indexing" do
+        [i|"abcd"[3]|] `assertEval` [i|"d"|]
+        [i|"abcd"[[1,3]]|] `assertEval` [i|"bd"|]
+        [i|"abcd"[-1]|] `assertEvalError` "index out of bounds"
+        [i|"abcd"[4]|] `assertEvalError` "index out of bounds"
+        [i|"abcd"[[1,4]]|] `assertEvalError` "index out of bounds",
       testCase "with struct" do
         [i|struct{"foo" + "bar" = 4.2, "ba z" = true && false}|]
           `assertEval` [i|struct{"foobar" = 4.2, "ba z" = false}|]
@@ -110,11 +121,17 @@ test_coll =
         let l = "[0, 1, 22, 333]"
         (l <> "|> get(2)") `assertEval` "22"
         (l <> "|> get(22)") `assertEval` "null"
-        (l <> "|> get([2,3,-1])") `assertEval` "[22, 333, null]"
-        let s = "struct{'foo = 40, 'bar = 42, 'foo = 4}"
-        (s <> "|> get('bar)") `assertEval` "42"
-        (s <> [i||> get("bar")|]) `assertEval` "null"
-        (s <> "|> get(['baz, 'foo])") `assertEval` "[null, 40]",
+        (l <> "|> get([2,3])") `assertEval` "[22, 333]"
+        (l <> "|> get([2,3,-1])") `assertEval` "null"
+        let s = [i|"abcd"|]
+        (s <> "|> get(2)") `assertEval` [i|"c"|]
+        (s <> "|> get(22)") `assertEval` "null"
+        (s <> "|> get([2,3])") `assertEval` [i|"cd"|]
+        (s <> "|> get([2,3,-1])") `assertEval` "null"
+        let st = "struct{'foo = 40, 'bar = 42, 'foo = 4}"
+        (st <> "|> get('bar)") `assertEval` "42"
+        (st <> [i||> get("bar")|]) `assertEval` "null"
+        (st <> "|> get(['baz, 'foo])") `assertEval` "[null, 40]",
       testCase "with prelude function `prepend`" $
         "struct{'foo = 40, 'bar = 42} |> prepend('bar, 10086)"
           `assertEval` "struct{'bar = 10086, 'foo = 40, 'bar = 42}",
@@ -184,7 +201,7 @@ test_import =
         [i|let s = import("foo/struct.niv"); to_string(s.three, ", ", s::four)|] `assertEval'` [i|"3, 4"|],
       testCase "with JSON import" do
         [i|let s = import_json("joe.json"); s.age|] `assertEval'` "12"
-        [i|import_json("three.niv")|] `assertEvalError'` "`three.niv` doesn't seem to be a valid JSON file",
+        [i|import_json("foo/struct.niv")|] `assertEvalError'` "`foo/struct.niv` doesn't seem to be a valid JSON file",
       testProperty "can loselessly convert `Aeson.Value` to `Val` and back" $
         \(v :: Aeson.Value) -> v & into @Val & tryInto @Aeson.Value & either (const False) (== v)
     ]

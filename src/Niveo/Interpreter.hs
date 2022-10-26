@@ -102,21 +102,29 @@ eval (ECall {callee, args}) =
     (callee', _) -> throwReport "invalid call" [(callee.range, This [i|`#{callee'}` is not callable|])]
 eval (EIndex {this, idx}) =
   let noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
+      noIndex :: EvalEs :>> es => Int -> Int -> Eff es a
       noIndex len' n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len'} but the index is `#{n'}`|])]
+      abort :: EvalEs :>> es => Val -> Val -> Eff es a
+      abort this' idx' =
+        throwReport
+          "mismatched types"
+          [(idx.range, This [i|could not apply `[]` to `(#{this'}, #{idx'})`|])]
    in do
         (this', idx') <- traverseBoth eval (this, idx)
-        let abort =
-              throwReport
-                "mismatched types"
-                [(idx.range, This [i|could not apply `[]` to `(#{this'}, #{idx'})`|])]
-        let l `index` i' =
-              case i' of
-                VNum n ->
-                  tryInto @Int n
-                    & either
-                      (const $ unexpectedTy idx.range "integer" n)
-                      (\n' -> l ^? ix n' & maybe (noIndex (Seq.length l) n') pure)
-                _ -> abort
+        let index l = \case
+              VNum n ->
+                tryInto @Int n
+                  & either
+                    (const $ unexpectedTy idx.range "integer" n)
+                    (\n' -> l ^? ix n' & maybe (noIndex (Seq.length l) n') pure)
+              _ -> abort this' idx'
+        let indexS s = \case
+              VNum n ->
+                tryInto @Int n
+                  & either
+                    (const $ unexpectedTy idx.range "integer" n)
+                    (\n' -> into @String s ^? ix n' & maybe (noIndex (Text.length s) n') pure)
+              _ -> abort this' idx'
         let kvs `search` k =
               tryInto @Name k
                 & either
@@ -125,9 +133,11 @@ eval (EIndex {this, idx}) =
         case (this', idx') of
           (VList l, VList is) -> is & traverse (l `index`) <&> VList
           (VList l, i') -> l `index` i'
+          (VStr s, VList is) -> is & traverse (s `indexS`) <&> VStr . via @String
+          (VStr s, i') -> s `indexS` i' <&> VStr . one
           (VStruct kvs, VList ks) -> ks & traverse (kvs `search`) <&> VList
           (VStruct kvs, k) -> kvs `search` k
-          _ -> abort
+          _ -> abort this' idx'
 eval (EParen {inner}) = eval inner
 eval (EList {exprs}) = VList . from <$> eval `traverse` exprs
 eval (EIfElse {cond, then_, else_}) =
@@ -269,19 +279,26 @@ last_ range vs = unexpectedArgs range "(non_empty_list)" vs
 
 get_ :: RawHostFun
 get_ range vs =
-  let abort = unexpectedArgs range "(list, int | list(int)) | (struct, name | list(name))" vs
-      l `index` VNum n =
-        tryInto @Int n
-          & either (const abort) (\n' -> l ^? ix n' & fromMaybe VNull & pure)
-      _ `index` _ = abort
+  let abort :: EvalEs :>> es => Eff es a
+      abort = unexpectedArgs range "(list, int | list(int)) | (struct, name | list(name))" vs
+      index l = \case
+        VNum n ->
+          tryInto @Int n
+            & either (const abort) (\n' -> l ^? ix n' & pure)
+        _ -> abort
+      indexS s = \case
+        VNum n -> tryInto @Int n & either (const abort) (\n' -> into @String s ^? ix n' & pure)
+        _ -> abort
       kvs `search` k =
         tryInto @Name k
           & either
             (const abort)
             (pure . maybe VNull (\idx -> kvs ^?! ix idx & snd) . (`structFindIndex` kvs))
    in case vs of
-        [VList l, VList is] -> is & traverse (l `index`) <&> VList
-        [VList l, i'] -> l `index` i'
+        [VList l, VList is] -> is & traverse (l `index`) <&> maybe VNull VList . sequenceA
+        [VList l, i'] -> l `index` i' <&> fromMaybe VNull
+        [VStr s, VList is] -> is & traverse (s `indexS`) <&> maybe VNull (VStr . via @String) . sequenceA
+        [VStr s, i'] -> s `indexS` i' <&> maybe VNull (VStr . one)
         [VStruct kvs, VList ks] -> ks & traverse (kvs `search`) <&> VList
         [VStruct kvs, k] -> kvs `search` k
         _ -> abort
