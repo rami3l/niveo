@@ -224,3 +224,19 @@ test_import =
           ),
           ("joe.json", [i|{ "name": "Joe", "age": 12 }|])
         ]
+
+test_std :: TestTree
+test_std =
+  testGroup
+    "Should work with `std` modules"
+    [ testCase "with `std/list`" do
+        let imp = [i|let list = import("std/list");|]
+        (imp <> "range(0,4) |> list::map(fun(a){a ** 2})")
+          `assertEval` "[0, 1, 4, 9]"
+        (imp <> "range(0,4) |> list::filter(fun(a){mod(a, 2) == 0})")
+          `assertEval` "[0, 2]"
+        (imp <> "range(0,4) |> list::foldl([], fun(acc, it){acc + [it]})")
+          `assertEval` "[0, 1, 2, 3]"
+        (imp <> "range(0,4) |> list::foldr([], fun(acc, it){acc + [it]})")
+          `assertEval` "[3, 2, 1, 0]"
+    ]

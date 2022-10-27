@@ -210,8 +210,9 @@ prelude = Env {dict = prelude'}
           <$> [ HostFun "import" import_,
                 HostFun "import_json" importJSON,
                 HostFun "to_string" toString_,
-                HostFun "len" len,
                 HostFun "range" range_,
+                HostFun "mod" mod_,
+                HostFun "len" len,
                 HostFun "reverse" reverse_,
                 HostFun "head" head_,
                 HostFun "tail" tail_,
@@ -254,9 +255,7 @@ importJSON range vs = unexpectedArgs range "(name)" vs
 toString_ :: RawHostFun
 toString_ _ vs = vs <&> (\case VStr s -> s; v -> show v) & Text.concat & VStr & pure
 
-len, range_, reverse_ :: RawHostFun
-len _ [VList l] = pure . VNum . fromIntegral . length $ l
-len range vs = unexpectedArgs range "(list)" vs
+range_, mod_ :: RawHostFun
 range_ range vs =
   let abort = unexpectedArgs range "(int, int)" vs
    in case vs of
@@ -264,6 +263,17 @@ range_ range vs =
           (x', y') <- traverseBoth (either (const $ unexpectedArgs range "(int, int)" vs) pure . tryInto @Int) (x, y)
           pure . VList . from $ VNum . fromIntegral <$> [x' .. y' - 1]
         _ -> abort
+mod_ range vs =
+  let abort = unexpectedArgs range "(int, int)" vs
+   in case vs of
+        [VNum x, VNum y] -> do
+          (x', y') <- traverseBoth (either (const $ unexpectedArgs range "(int, int)" vs) pure . tryInto @Int) (x, y)
+          pure . VNum . fromIntegral $ x' `mod` y'
+        _ -> abort
+
+len, reverse_ :: RawHostFun
+len _ [VList l] = pure . VNum . fromIntegral . length $ l
+len range vs = unexpectedArgs range "(list)" vs
 reverse_ _ [VList l] = pure . VList $ Seq.reverse l
 reverse_ range vs = unexpectedArgs range "(list)" vs
 
