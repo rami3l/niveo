@@ -73,5 +73,5 @@ runFileSystemPure fs0 = reinterpret (evalState fs0) $ const \case
       tl
         & List.findIndex isDot2
         -- Remove `y` at `idx` and `..` at `idx+1`.
-        & maybe xs (\idx -> simplifyPath' . toListOf (elements (`notElem` [idx, idx + 1])) $ xs)
+        & maybe xs (\idx -> xs & toListOf (elements (`notElem` [idx, idx + 1])) & simplifyPath')
     isDot2 = (`elem` ["../" :: String, "..\\"])

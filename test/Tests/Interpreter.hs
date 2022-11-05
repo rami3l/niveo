@@ -119,19 +119,19 @@ test_coll =
         [i|struct{one: "Night"}.two|] `assertEvalError` "no entry found",
       testCase "with prelude function `get`" do
         let l = "[0, 1, 22, 333]"
-        (l <> "|> get(2)") `assertEval` "22"
-        (l <> "|> get(22)") `assertEval` "null"
-        (l <> "|> get([2,3])") `assertEval` "[22, 333]"
-        (l <> "|> get([2,3,-1])") `assertEval` "null"
+        (l <> "|> has(2)") `assertEval` "true"
+        (l <> "|> has(22)") `assertEval` "false"
+        (l <> "|> has([2,3])") `assertEval` "true"
+        (l <> "|> has([2,3,-1])") `assertEval` "false"
         let s = [i|"abcd"|]
-        (s <> "|> get(2)") `assertEval` [i|"c"|]
-        (s <> "|> get(22)") `assertEval` "null"
-        (s <> "|> get([2,3])") `assertEval` [i|"cd"|]
-        (s <> "|> get([2,3,-1])") `assertEval` "null"
+        (s <> "|> has(2)") `assertEval` "true"
+        (s <> "|> has(22)") `assertEval` "false"
+        (s <> "|> has([2,3])") `assertEval` "true"
+        (s <> "|> has([2,3,-1])") `assertEval` "false"
         let st = "struct{'foo = 40, 'bar = 42, 'foo = 4}"
-        (st <> "|> get('bar)") `assertEval` "42"
-        (st <> [i||> get("bar")|]) `assertEval` "null"
-        (st <> "|> get(['baz, 'foo])") `assertEval` "[null, 40]",
+        (st <> "|> has('bar)") `assertEval` "true"
+        (st <> [i||> has("bar")|]) `assertEval` "false"
+        (st <> "|> has(['baz, 'foo])") `assertEval` "false",
       testCase "with prelude function `prepend`" $
         "struct{'foo = 40, 'bar = 42} |> prepend('bar, 10086)"
           `assertEval` "struct{'bar = 10086, 'foo = 40, 'bar = 42}",

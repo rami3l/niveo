@@ -218,7 +218,7 @@ prelude = Env {dict = prelude'}
                 HostFun "tail" tail_,
                 HostFun "init" init_,
                 HostFun "last" last_,
-                HostFun "get" get_,
+                HostFun "has" has_,
                 HostFun "prepend" prepend,
                 HostFun "delete" delete,
                 HostFun "rename" rename,
@@ -287,29 +287,24 @@ init_ range vs = unexpectedArgs range "(non_empty_list)" vs
 last_ _ [VList (_ Seq.:|> v)] = pure v
 last_ range vs = unexpectedArgs range "(non_empty_list)" vs
 
-get_ :: RawHostFun
-get_ range vs =
+has_ :: RawHostFun
+has_ range vs =
   let abort :: EvalEs :>> es => Eff es a
       abort = unexpectedArgs range "(list, int | list(int)) | (struct, name | list(name))" vs
       index l = \case
         VNum n ->
           tryInto @Int n
-            & either (const abort) (\n' -> l ^? ix n' & pure)
-        _ -> abort
-      indexS s = \case
-        VNum n -> tryInto @Int n & either (const abort) (\n' -> into @String s ^? ix n' & pure)
+            & either (const abort) (\n' -> pure $ 0 <= n' && n' < length l)
         _ -> abort
       kvs `search` k =
         tryInto @Name k
-          & either
-            (const abort)
-            (pure . maybe VNull (\idx -> kvs ^?! ix idx & snd) . (`structFindIndex` kvs))
-   in case vs of
-        [VList l, VList is] -> is & traverse (l `index`) <&> maybe VNull VList . sequenceA
-        [VList l, i'] -> l `index` i' <&> fromMaybe VNull
-        [VStr s, VList is] -> is & traverse (s `indexS`) <&> maybe VNull (VStr . via @String) . sequenceA
-        [VStr s, i'] -> s `indexS` i' <&> maybe VNull (VStr . one)
-        [VStruct kvs, VList ks] -> ks & traverse (kvs `search`) <&> VList
+          & either (const abort) (pure . isJust . (`structFindIndex` kvs))
+   in VBool <$> case vs of
+        [VList l, VList is] -> is & traverse (l `index`) <&> and
+        [VList l, i'] -> l `index` i'
+        [VStr s, VList is] -> is & traverse ((s & into @String) `index`) <&> and
+        [VStr s, i'] -> s & into @String & (`index` i')
+        [VStruct kvs, VList ks] -> ks & traverse (kvs `search`) <&> and
         [VStruct kvs, k] -> kvs `search` k
         _ -> abort
 
@@ -354,7 +349,7 @@ rename range vs =
                     & structFindIndex k'
                     & maybe
                       (noEntry s k)
-                      (\idx -> pure . VStruct $ kvs & ix idx % _1 .~ k1')
+                      (\idx -> pure . VStruct . (ix idx % _1 .~ k1') $ kvs)
               )
         _ -> abort
 
@@ -369,7 +364,7 @@ update range vs =
               (const abort)
               ( maybe
                   (noEntry s k)
-                  (\idx -> pure . VStruct $ kvs & ix idx % _2 .~ v)
+                  (\idx -> pure . VStruct . (ix idx % _2 .~ v) $ kvs)
                   . (`structFindIndex` kvs)
               )
         _ -> abort
