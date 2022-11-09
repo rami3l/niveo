@@ -56,6 +56,19 @@ test_arithmetic =
           `assertExpr` "(+ a (let ((b (if p (|| c d) (if q e f)))) (&& g b)))"
     ]
 
+test_str :: TestTree
+test_str =
+  testGroup
+    "Should parse string literals"
+    [ testCase "simple" $ [i|"W O W"|] `assertExpr` [i|"W O W"|],
+      testCase "multiline" $
+        [__i|"
+            Is this the real life?
+            Is this just fantasy?
+          "|]
+          `assertExpr` [i|"\\n  Is this the real life?\\n  Is this just fantasy?\\n"|]
+    ]
+
 test_coll :: TestTree
 test_coll =
   testGroup
