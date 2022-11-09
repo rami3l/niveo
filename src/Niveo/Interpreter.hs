@@ -273,9 +273,11 @@ mod_ range vs =
 
 len, reverse_ :: RawHostFun
 len _ [VList l] = pure . VNum . fromIntegral . length $ l
-len range vs = unexpectedArgs range "(list)" vs
+len _ [VStr s] = pure . VNum . fromIntegral . Text.length $ s
+len range vs = unexpectedArgs range "(list|string)" vs
 reverse_ _ [VList l] = pure . VList $ Seq.reverse l
-reverse_ range vs = unexpectedArgs range "(list)" vs
+reverse_ _ [VStr s] = pure . VStr $ Text.reverse s
+reverse_ range vs = unexpectedArgs range "(list|string)" vs
 
 head_, tail_, init_, last_ :: RawHostFun
 head_ _ [VList (v Seq.:<| _)] = pure v
