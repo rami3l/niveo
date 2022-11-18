@@ -268,7 +268,7 @@ data Expr
   | EParen {inner :: Expr, end :: !Token}
   | EList {exprs :: [Expr], end :: !Token}
   | EIfElse {kw :: !Token, cond, then_, else_ :: Expr}
-  | ELet {kw :: !Token, defs :: NonEmpty (Token, Expr), val :: Expr}
+  | ELet {kw :: !Token, defs :: NonEmpty (Token, Expr), res :: Expr}
   | ELambda {kw :: !Token, params :: ![Token], body :: Expr}
   | EStruct {kw :: !Token, kvs :: [(Expr, Expr)]}
   | ELit !Lit
@@ -302,7 +302,7 @@ instance Show Expr where
   show (EParen {inner}) = show inner
   show (EList {exprs}) = show $ Showable (ToString' @Text "list") : Showable `fmap` exprs
   show (EIfElse {cond, then_, else_}) = [i|(if #{cond} #{then_} #{else_})|]
-  show (ELet {kw = kw', defs, val}) = [i|(#{kw'} #{defs'} #{val})|] where defs' = toList defs <&> (\(ident', def') -> Showable [Showable ident', Showable def'])
+  show (ELet {kw = kw', defs, res}) = [i|(#{kw'} #{defs'} #{res})|] where defs' = toList defs <&> (\(ident', def') -> Showable [Showable ident', Showable def'])
   show (ELambda {params, body}) = [i|(lambda #{params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
   show (EStruct {kvs}) = [i|(struct #{kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit

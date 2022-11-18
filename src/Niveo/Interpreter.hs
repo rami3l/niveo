@@ -18,6 +18,7 @@ import Data.Map.Strict qualified as Map
 import Data.Sequence qualified as Seq
 import Data.String.Interpolate
 import Data.Text qualified as Text
+import Data.Tuple.Extra (secondM)
 import Data.Tuple.Optics
 import Effectful
 import Effectful.Error.Static
@@ -91,79 +92,81 @@ eval expr@(EBinary {lhs, op, rhs}) = do
           throwReport
             "mismatched types"
             [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
-eval (ECall {callee, args}) =
+eval (ECall {callee, args}) = do
+  let margs = eval `traverse` args
   eval callee >>= \case
-    callee'@(VLambda params body ctx)
-      | length params == length args -> do
-          argBinds <- Map.fromList . zip (params <&> (.lexeme)) <$> eval `traverse` args
+    callee'@(VLambda params body ctx) ->
+      if paramCount /= argCount
+        then throwReport "invalid call" [(callee.range, This [i|`#{callee'}` expects #{paramCount} arguments, found #{argCount}|])]
+        else do
+          argBinds <- Map.fromList . zip (params <&> (.lexeme)) <$> margs
           -- `Map.union` is a left-biased union, which means that the bindings in the inner scope
           -- will shadow those in the captured scope.
           let localEnv = ctx.env & #dict %~ Map.union argBinds
           eval body & local @Context (const ctx {env = localEnv})
-      | otherwise -> throwReport "invalid call" [(callee.range, This [i|`#{callee'}` expects #{length params} arguments, found #{length args}|])]
-    VHostFun (HostFun {fun}) -> fun callee.range =<< eval `traverse` args
+      where
+        (paramCount, argCount) = (length params, length args)
+    VHostFun (HostFun {fun}) -> fun callee.range =<< margs
     callee' -> throwReport "invalid call" [(callee.range, This [i|`#{callee'}` is not callable|])]
-eval (EIndex {this, idx}) =
-  let noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
-      noIndex :: EvalEs :>> es => Int -> Int -> Eff es a
-      noIndex len' n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len'} but the index is `#{n'}`|])]
-      abort :: EvalEs :>> es => Val -> Val -> Eff es a
-      abort this' idx' =
-        throwReport
-          "mismatched types"
-          [(idx.range, This [i|could not apply `[]` to `(#{this'}, #{idx'})`|])]
-   in do
-        (this', idx') <- traverseBoth eval (this, idx)
-        let index l = \case
-              VNum n ->
-                tryInto @Int n
-                  & either
-                    (const $ unexpectedTy idx.range "integer" n)
-                    (\n' -> l ^? ix n' & maybe (noIndex (Seq.length l) n') pure)
-              _ -> abort this' idx'
-        let indexS s = \case
-              VNum n ->
-                tryInto @Int n
-                  & either
-                    (const $ unexpectedTy idx.range "integer" n)
-                    (\n' -> into @String s ^? ix n' & maybe (noIndex (Text.length s) n') pure)
-              _ -> abort this' idx'
-        let kvs `search` k =
-              tryInto @Name k
-                & either
-                  (const $ unexpectedTy idx.range "name" k)
-                  (maybe (noEntry k) (\idx'' -> kvs ^?! ix idx'' & snd & pure) . (`structFindIndex` kvs))
-        case (this', idx') of
-          (VList l, VList is) -> is & traverse (l `index`) <&> VList
-          (VList l, i') -> l `index` i'
-          (VStr s, VList is) -> is & traverse (s `indexS`) <&> VStr . via @String
-          (VStr s, i') -> s `indexS` i' <&> VStr . one
-          (VStruct kvs, VList ks) -> ks & traverse (kvs `search`) <&> VList
-          (VStruct kvs, k) -> kvs `search` k
-          _ -> abort this' idx'
+eval (EIndex {this, idx}) = do
+  (this', idx') <- traverseBoth eval (this, idx)
+  let index l = \case
+        VNum n ->
+          tryInto @Int n
+            & either
+              (const $ unexpectedTy idx.range "integer" n)
+              (\n' -> l ^? ix n' & maybe (noIndex (Seq.length l) n') pure)
+        _ -> abort this' idx'
+  let indexS s = \case
+        VNum n ->
+          tryInto @Int n
+            & either
+              (const $ unexpectedTy idx.range "integer" n)
+              (\n' -> into @String s ^? ix n' & maybe (noIndex (Text.length s) n') pure)
+        _ -> abort this' idx'
+  let kvs `search` k =
+        tryInto @Name k
+          & either
+            (const $ unexpectedTy idx.range "name" k)
+            (maybe (noEntry k) (\idx'' -> kvs ^?! ix idx'' & snd & pure) . (`structFindIndex` kvs))
+  case (this', idx') of
+    (VList l, VList is) -> is & traverse (l `index`) <&> VList
+    (VList l, i') -> l `index` i'
+    (VStr s, VList is) -> is & traverse (s `indexS`) <&> VStr . via @String
+    (VStr s, i') -> s `indexS` i' <&> VStr . one
+    (VStruct kvs, VList ks) -> ks & traverse (kvs `search`) <&> VList
+    (VStruct kvs, k) -> kvs `search` k
+    _ -> abort this' idx'
+  where
+    noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
+    noIndex :: EvalEs :>> es => Int -> Int -> Eff es a
+    noIndex len' n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len'} but the index is `#{n'}`|])]
+    abort :: EvalEs :>> es => Val -> Val -> Eff es a
+    abort this' idx' =
+      throwReport
+        "mismatched types"
+        [(idx.range, This [i|could not apply `[]` to `(#{this'}, #{idx'})`|])]
 eval (EParen {inner}) = eval inner
 eval (EList {exprs}) = VList . from <$> eval `traverse` exprs
 eval (EIfElse {cond, then_, else_}) =
   eval cond >>= \case
     (VBool cond') -> eval $ if cond' then then_ else else_
     cond' -> unexpectedTy cond.range "boolean" cond'
-eval (ELet {kw, defs, val})
+eval (ELet {kw, defs, res})
   | kw.type_ == TLetrec = do
       -- Following the French CAML tradition here: https://stackoverflow.com/a/1891573
-      let define (defs' :: NonEmpty (Token, Val)) =
-            let defs'' = Map.fromList $ first (.lexeme) <$> into @[(Token, Val)] defs'
-             in #env % #dict %~ Map.union defs''
-      defs' <- mfix \defs' ->
-        defs & traverse \(ident', def') ->
-          eval def' & local @Context (define defs') <&> (ident',)
-      eval val & local @Context (define defs')
+      defs' <- mfix \defs' -> secondM (local (bind defs') . eval) `traverse` defs
+      eval res & local (bind defs')
   | otherwise = do
-      ctx <- ask @Context
-      let ctxUpdate ctx' (ident', def') = do
-            def'' <- eval def' & local (const ctx')
-            ctx' & #env % #dict %~ Map.insert ident'.lexeme def'' & pure
+      ctx <- ask
       ctx' <- defs & foldM ctxUpdate ctx
-      eval val & local (const ctx')
+      eval res & local (const ctx')
+  where
+    bind :: NonEmpty (Token, Val) -> Context -> Context
+    bind defs' = #env % #dict %~ Map.union defs'' where defs'' = Map.fromList . into $ first (.lexeme) <$> defs'
+    ctxUpdate ctx' (ident', def') = do
+      def'' <- eval def' & local (const ctx')
+      pure $ one (ident', def'') `bind` ctx'
 eval (ELambda {params, body}) = asks @Context $ VLambda params body
 eval (EStruct {kvs}) = VStruct . from <$> bitraverse evalName eval `traverse` kvs
   where
@@ -174,16 +177,8 @@ eval (EStruct {kvs}) = VStruct . from <$> bitraverse evalName eval `traverse` kv
 eval (ELit l) = pure $ from l
 eval (EVar tk) =
   asks @Context (^. #env % #dict % at tk.lexeme)
-    >>= maybe
-      ( throwReport
-          "undefined variable"
-          [(tk.range, This [i|`#{tk}` not found in this scope|])]
-      )
-      pure
-eval expr@(EError tk) =
-  throwReport
-    "internal error"
-    [(expr.range, This [i|illegal expression `#{tk}`|])]
+    >>= maybe (throwReport "undefined variable" [(tk.range, This [i|`#{tk}` not found in this scope|])]) pure
+eval expr@(EError tk) = throwReport "internal error" [(expr.range, This [i|illegal expression `#{tk}`|])]
 
 -- * Common runtime errors
 
@@ -207,26 +202,25 @@ instance Default Env where
 prelude :: Env
 prelude = Env {dict = prelude'}
   where
-    prelude' =
-      Map.fromList $
-        second VHostFun . toFst (.name)
-          <$> [ HostFun "import" import_,
-                HostFun "import_json" importJSON,
-                HostFun "to_string" toString_,
-                HostFun "range" range_,
-                HostFun "mod" mod_,
-                HostFun "len" len,
-                HostFun "reverse" reverse_,
-                HostFun "head" head_,
-                HostFun "tail" tail_,
-                HostFun "init" init_,
-                HostFun "last" last_,
-                HostFun "has" has_,
-                HostFun "prepend" prepend,
-                HostFun "delete" delete,
-                HostFun "rename" rename,
-                HostFun "update" update
-              ]
+    prelude' = hostFuns <&> toFst (.name) <&> second VHostFun & into
+    hostFuns =
+      [ HostFun "delete" delete,
+        HostFun "has" has_,
+        HostFun "head" head_,
+        HostFun "import" import_,
+        HostFun "import_json" importJSON,
+        HostFun "init" init_,
+        HostFun "last" last_,
+        HostFun "len" len,
+        HostFun "mod" mod_,
+        HostFun "prepend" prepend,
+        HostFun "range" range_,
+        HostFun "rename" rename,
+        HostFun "reverse" reverse_,
+        HostFun "tail" tail_,
+        HostFun "to_string" toString_,
+        HostFun "update" update
+      ]
 
 import_ :: RawHostFun
 import_ range [VStr fin] = do

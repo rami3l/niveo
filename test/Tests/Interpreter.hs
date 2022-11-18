@@ -111,6 +111,9 @@ test_coll =
         |]
           `assertEval` [i|struct{"foo" = '__some_foo__, 'bar = 42, "baz" = [1, 2.3]}|],
       testCase "with struct accessors" do
+        let st = "struct{'foo = 40, 'bar = 42, 'foo = 4}"
+        (st <> "['bar]") `assertEval` "42"
+        (st <> "[['bar, 'foo]]") `assertEval` "[42, 40]"
         [__i|
           let s = struct{one: "Night", 'blinding = "Lights"};
           s.one + s::blinding
