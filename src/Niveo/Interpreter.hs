@@ -92,14 +92,17 @@ eval expr@(EBinary {lhs, op, rhs}) = do
             "mismatched types"
             [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
 eval (ECall {callee, args}) =
-  (callee, args) & bitraverse eval (eval `traverse`) >>= \case
-    (VLambda params body ctx, args')
-      | length params == length args ->
-          let localEnv = ctx.env & #dict %~ (Map.union . Map.fromList $ (params <&> (.lexeme)) `zip` args')
-           in eval body & local @Context (const ctx {env = localEnv})
-      | otherwise -> unexpectedArgs callee.range [i|(#{sepByComma params})|] args'
-    (VHostFun (HostFun {fun}), args') -> fun callee.range args'
-    (callee', _) -> throwReport "invalid call" [(callee.range, This [i|`#{callee'}` is not callable|])]
+  eval callee >>= \case
+    callee'@(VLambda params body ctx)
+      | length params == length args -> do
+          argBinds <- Map.fromList . zip (params <&> (.lexeme)) <$> eval `traverse` args
+          -- `Map.union` is a left-biased union, which means that the bindings in the inner scope
+          -- will shadow those in the captured scope.
+          let localEnv = ctx.env & #dict %~ Map.union argBinds
+          eval body & local @Context (const ctx {env = localEnv})
+      | otherwise -> throwReport "invalid call" [(callee.range, This [i|`#{callee'}` expects #{length params} arguments, found #{length args}|])]
+    VHostFun (HostFun {fun}) -> fun callee.range =<< eval `traverse` args
+    callee' -> throwReport "invalid call" [(callee.range, This [i|`#{callee'}` is not callable|])]
 eval (EIndex {this, idx}) =
   let noEntry idx' = throwReport "no entry found" [(idx.range, This [i|for key `#{idx'}`|])]
       noIndex :: EvalEs :>> es => Int -> Int -> Eff es a
