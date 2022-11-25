@@ -61,6 +61,7 @@ default-extensions:
   - TypeFamilies
   - TypeOperators
   - UndecidableInstances
+  - ViewPatterns
 
 dependencies:
   - name: base

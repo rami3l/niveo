@@ -78,6 +78,7 @@ library
       TypeFamilies
       TypeOperators
       UndecidableInstances
+      ViewPatterns
   ghc-options: -Wall -Wno-unticked-promoted-constructors -fplugin=Effectful.Plugin
   build-depends:
       aeson
@@ -155,6 +156,7 @@ executable niveo-exe
       TypeFamilies
       TypeOperators
       UndecidableInstances
+      ViewPatterns
   ghc-options: -Wall -Wno-unticked-promoted-constructors -fplugin=Effectful.Plugin -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
@@ -238,6 +240,7 @@ test-suite niveo-test
       TypeFamilies
       TypeOperators
       UndecidableInstances
+      ViewPatterns
   ghc-options: -Wall -Wno-unticked-promoted-constructors -fplugin=Effectful.Plugin -threaded -rtsopts -with-rtsopts=-N
   build-tool-depends:
       tasty-discover:tasty-discover

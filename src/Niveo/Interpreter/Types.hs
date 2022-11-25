@@ -55,25 +55,24 @@ data Val
   deriving (Eq)
 
 instance TryFrom Val Aeson.Value where
-  tryFrom VNull = Right Aeson.Null
-  tryFrom (VBool b) = Right $ Aeson.toJSON b
-  tryFrom (VNum n) = Right $ Aeson.toJSON n
-  tryFrom (VStr s) = Right $ Aeson.toJSON s
-  tryFrom v = case v of
-    VList vs -> maybeInto `traverse` vs <&> Aeson.toJSON & maybeToRight abort
-    VStruct kvs ->
-      kvs
-        & traverse (bitraverse extractString maybeInto)
-        -- https://hackage.haskell.org/package/optics-core-0.4.1/docs/Data-Map-Optics.html#v:toMapOf
-        <&> toMapOf (folded % ifolded)
-        <&> Aeson.toJSON
-        & maybeToRight abort
-    _ -> Left abort
+  tryFrom = \case
+    VNull -> Right Aeson.Null
+    VBool b -> Right $ Aeson.toJSON b
+    VNum n -> Right $ Aeson.toJSON n
+    VStr s -> Right $ Aeson.toJSON s
+    VList vs | Just json <- maybeInto `traverse` vs <&> Aeson.toJSON -> Right json
+    VStruct kvs
+      | Just json <-
+          kvs
+            & traverse (bitraverse extractString maybeInto)
+            -- https://hackage.haskell.org/package/optics-core-0.4.1/docs/Data-Map-Optics.html#v:toMapOf
+            <&> toMapOf (folded % ifolded)
+            <&> Aeson.toJSON ->
+          Right json
+    v -> Left $ TryFromException v Nothing
     where
       maybeInto = rightToMaybe . tryInto @Aeson.Value
-      abort = TryFromException v Nothing
-      extractString (NStr s) = Just s
-      extractString _ = Nothing
+      extractString s | NStr s' <- s = Just s' | otherwise = Nothing
 
 instance From Aeson.Value Val where
   from Aeson.Null = VNull

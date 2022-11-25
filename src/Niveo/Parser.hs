@@ -304,7 +304,7 @@ instance Show Expr where
   show (EIfElse {cond, then_, else_}) = [i|(if #{cond} #{then_} #{else_})|]
   show (ELet {kw = kw', defs, res}) = [i|(#{kw'} #{defs'} #{res})|] where defs' = toList defs <&> (\(ident', def') -> Showable [Showable ident', Showable def'])
   show (ELambda {params, body}) = [i|(lambda #{params'} #{body})|] where params' = Showable . ToString' . (.lexeme) <$> params
-  show (EStruct {kvs}) = [i|(struct #{kvs'})|] where kvs' = kvs <&> \case (k, v) -> Showable [Showable k, Showable v]
+  show (EStruct {kvs}) = [i|(struct #{kvs'})|] where kvs' = kvs <&> \(k, v) -> Showable [Showable k, Showable v]
   show (ELit lit) = show lit
   show (EVar var) = var.lexeme & toString
   show (EError tk) = [i|"<error #{tk}>"|]

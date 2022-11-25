@@ -60,10 +60,7 @@ eval expr@(EUnary {op, rhs}) = do
     (TBang, VBool b) -> pure . VBool $ not b
     (TPlus, x@(VNum _)) -> pure x
     (TMinus, VNum x) -> pure . VNum $ negate x
-    _ ->
-      throwReport
-        "mismatched types"
-        [(expr.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
+    _ -> throwReport "mismatched types" [(expr.range, This [i|Could not apply `#{op}` to `#{rhs'}`|])]
 eval expr@(EBinary {lhs, op, rhs}) = do
   lhs' <- eval lhs
   case (op.type_, lhs') of
@@ -89,46 +86,39 @@ eval expr@(EBinary {lhs, op, rhs}) = do
         (TAmp2, _, b@(VBool _)) -> pure b
         (TPipe2, _, b@(VBool _)) -> pure b
         _ ->
-          throwReport
-            "mismatched types"
-            [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
+          throwReport "mismatched types" [(expr.range, This [i|could not apply `#{op}` to `(#{lhs'}, #{rhs'})`|])]
 eval (ECall {callee, args}) = do
   let margs = eval `traverse` args
   eval callee >>= \case
-    callee'@(VLambda params body ctx) ->
-      if paramCount /= argCount
-        then throwReport "invalid call" [(callee.range, This [i|`#{callee'}` expects #{paramCount} arguments, found #{argCount}|])]
-        else do
+    callee'@(VLambda params body ctx)
+      | let (paramCount, argCount) = (length params, length args),
+        paramCount /= argCount ->
+          throwReport "invalid call" [(callee.range, This [i|`#{callee'}` expects #{paramCount} arguments, found #{argCount}|])]
+      | otherwise -> do
           argBinds <- Map.fromList . zip (params <&> (.lexeme)) <$> margs
           -- `Map.union` is a left-biased union, which means that the bindings in the inner scope
           -- will shadow those in the captured scope.
           let localEnv = ctx.env & #dict %~ Map.union argBinds
           eval body & local @Context (const ctx {env = localEnv})
-      where
-        (paramCount, argCount) = (length params, length args)
     VHostFun (HostFun {fun}) -> fun callee.range =<< margs
     callee' -> throwReport "invalid call" [(callee.range, This [i|`#{callee'}` is not callable|])]
 eval (EIndex {this, idx}) = do
   (this', idx') <- traverseBoth eval (this, idx)
   let index l = \case
-        VNum n ->
-          tryInto @Int n
-            & either
-              (const $ unexpectedTy idx.range "integer" n)
-              (\n' -> l ^? ix n' & maybe (noIndex (Seq.length l) n') pure)
+        VNum n
+          | Right n' <- tryInto @Int n -> l ^? ix n' & maybe (noIndex (Seq.length l) n') pure
+          | otherwise -> unexpectedTy idx.range "integer" n
         _ -> abort this' idx'
   let indexS s = \case
-        VNum n ->
-          tryInto @Int n
-            & either
-              (const $ unexpectedTy idx.range "integer" n)
-              (\n' -> into @String s ^? ix n' & maybe (noIndex (Text.length s) n') pure)
+        VNum n
+          | Right n' <- tryInto @Int n -> into @String s ^? ix n' & maybe (noIndex (Text.length s) n') pure
+          | otherwise -> unexpectedTy idx.range "integer" n
         _ -> abort this' idx'
-  let kvs `search` k =
-        tryInto @Name k
-          & either
-            (const $ unexpectedTy idx.range "name" k)
-            (maybe (noEntry k) (\idx'' -> kvs ^?! ix idx'' & snd & pure) . (`structFindIndex` kvs))
+  let kvs `search` k = case tryInto @Name k of
+        Right k'
+          | Just idx'' <- k' `structFindIndex` kvs -> pure . snd $ kvs ^?! ix idx''
+          | otherwise -> noEntry k
+        _ -> unexpectedTy idx.range "name" k
   case (this', idx') of
     (VList l, VList is) -> is & traverse (l `index`) <&> VList
     (VList l, i') -> l `index` i'
@@ -142,10 +132,7 @@ eval (EIndex {this, idx}) = do
     noIndex :: EvalEs :>> es => Int -> Int -> Eff es a
     noIndex len' n' = throwReport "index out of bounds" [(idx.range, This [i|the len is #{len'} but the index is `#{n'}`|])]
     abort :: EvalEs :>> es => Val -> Val -> Eff es a
-    abort this' idx' =
-      throwReport
-        "mismatched types"
-        [(idx.range, This [i|could not apply `[]` to `(#{this'}, #{idx'})`|])]
+    abort this' idx' = throwReport "mismatched types" [(idx.range, This [i|could not apply `[]` to `(#{this'}, #{idx'})`|])]
 eval (EParen {inner}) = eval inner
 eval (EList {exprs}) = VList . from <$> eval `traverse` exprs
 eval (EIfElse {cond, then_, else_}) =
@@ -189,10 +176,7 @@ unexpectedArgs funRange expected vs =
     [(funRange, This [i|unexpected args in this call: expected `#{expected}`, found `(#{sepByComma vs})`|])]
 
 unexpectedTy :: (EvalEs :>> es, Show s) => Position -> Text -> s -> Eff es a
-unexpectedTy range tyName v =
-  throwReport
-    "mismatched types"
-    [(range, This [i|expected #{tyName}, found `#{show @String v}`|])]
+unexpectedTy range tyName v = throwReport "mismatched types" [(range, This [i|expected #{tyName}, found `#{show @String v}`|])]
 
 -- * The Niveo prelude
 
@@ -253,20 +237,22 @@ toString_ :: RawHostFun
 toString_ _ vs = vs <&> (\case VStr s -> s; v -> show v) & Text.concat & VStr & pure
 
 range_, mod_ :: RawHostFun
-range_ range vs =
-  let abort = unexpectedArgs range "(int, int)" vs
-   in case vs of
-        [VNum x, VNum y] -> do
-          (x', y') <- traverseBoth (either (const $ unexpectedArgs range "(int, int)" vs) pure . tryInto @Int) (x, y)
-          pure . VList . from $ VNum . fromIntegral <$> [x' .. y' - 1]
-        _ -> abort
-mod_ range vs =
-  let abort = unexpectedArgs range "(int, int)" vs
-   in case vs of
-        [VNum x, VNum y] -> do
-          (x', y') <- traverseBoth (either (const $ unexpectedArgs range "(int, int)" vs) pure . tryInto @Int) (x, y)
-          pure . VNum . fromIntegral $ x' `mod` y'
-        _ -> abort
+range_ range vs = case vs of
+  [VNum x, VNum y] -> do
+    (x', y') <- traverseBoth (either (const abort) pure . tryInto @Int) (x, y)
+    pure . VList . from $ VNum . fromIntegral <$> [x' .. y' - 1]
+  _ -> abort
+  where
+    abort :: EvalEs :>> es => Eff es a
+    abort = unexpectedArgs range "(int, int)" vs
+mod_ range vs = case vs of
+  [VNum x, VNum y] -> do
+    (x', y') <- traverseBoth (either (const abort) pure . tryInto @Int) (x, y)
+    pure . VNum . fromIntegral $ x' `mod` y'
+  _ -> abort
+  where
+    abort :: EvalEs :>> es => Eff es a
+    abort = unexpectedArgs range "(int, int)" vs
 
 len, reverse_ :: RawHostFun
 len _ [VList l] = pure . VNum . fromIntegral . length $ l
@@ -288,82 +274,50 @@ last_ range vs = unexpectedArgs range "(non_empty_list)" vs
 
 has_ :: RawHostFun
 has_ range vs =
-  let abort :: EvalEs :>> es => Eff es a
-      abort = unexpectedArgs range "(list, int | list(int)) | (struct, name | list(name))" vs
-      index l = \case
-        VNum n ->
-          tryInto @Int n
-            & either (const abort) (\n' -> pure $ 0 <= n' && n' < length l)
-        _ -> abort
-      kvs `search` k =
-        tryInto @Name k
-          & either (const abort) (pure . isJust . (`structFindIndex` kvs))
-   in VBool <$> case vs of
-        [VList l, VList is] -> is & traverse (l `index`) <&> and
-        [VList l, i'] -> l `index` i'
-        [VStr s, VList is] -> is & traverse ((s & into @String) `index`) <&> and
-        [VStr s, i'] -> s & into @String & (`index` i')
-        [VStruct kvs, VList ks] -> ks & traverse (kvs `search`) <&> and
-        [VStruct kvs, k] -> kvs `search` k
-        _ -> abort
+  VBool <$> case vs of
+    [VList l, VList is] -> is & traverse (l `index`) <&> and
+    [VList l, i'] -> l `index` i'
+    [VStr s, VList is] -> is & traverse ((s & into @String) `index`) <&> and
+    [VStr s, i'] -> s & into @String & (`index` i')
+    [VStruct kvs, VList ks] -> ks & traverse (kvs `search`) <&> and
+    [VStruct kvs, k] -> kvs `search` k
+    _ -> abort
+  where
+    abort :: EvalEs :>> es => Eff es a
+    abort = unexpectedArgs range "(list, int | list(int)) | (struct, name | list(name))" vs
+    index l = \case
+      VNum n | Right n' <- tryInto @Int n -> pure $ 0 <= n' && n' < length l
+      _ -> abort
+    kvs `search` k = tryInto @Name k & either (const abort) (pure . isJust . (`structFindIndex` kvs))
 
 prepend :: RawHostFun
-prepend range vs =
-  let abort = unexpectedArgs range "(struct, name, _)" vs
-   in case vs of
-        [VStruct kvs, k, v] ->
-          tryInto @Name k
-            & either (const abort) (pure . VStruct . (Seq.:<| kvs) . (,v))
-        _ -> abort
+prepend range vs
+  | [VStruct kvs, k, v] <- vs, Right k' <- tryInto @Name k = pure . VStruct $ (k', v) Seq.:<| kvs
+  | otherwise = unexpectedArgs range "(struct, name, _)" vs
 
 structFindIndex :: Eq k => k -> Seq (k, v) -> Maybe Int
 structFindIndex k = Seq.findIndexL $ (== k) . fst
 
 delete :: RawHostFun
-delete range vs =
-  let abort = unexpectedArgs range "(struct, name)" vs
-      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
-   in case vs of
-        [s@(VStruct kvs), k] ->
-          tryInto @Name k
-            & either
-              (const abort)
-              ( maybe (noEntry s k) (pure . VStruct . (`Seq.deleteAt` kvs))
-                  . (`structFindIndex` kvs)
-              )
-        _ -> abort
+delete range vs
+  | [s@(VStruct kvs), k] <- vs,
+    Right k' <- tryInto @Name k = case k' `structFindIndex` kvs of
+      Just idx -> pure . VStruct $ idx `Seq.deleteAt` kvs
+      Nothing -> throwReport [i|no entry found for key `#{k}` in `#{s}`|] []
+  | otherwise = unexpectedArgs range "(struct, name)" vs
 
 rename :: RawHostFun
-rename range vs =
-  let abort = unexpectedArgs range "(struct, name, name)" vs
-      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
-   in case vs of
-        [s@(VStruct kvs), k, k1] ->
-          tryInto @Name
-            `traverseBoth` (k, k1)
-            & either
-              (const abort)
-              ( \(k', k1') ->
-                  kvs
-                    & structFindIndex k'
-                    & maybe
-                      (noEntry s k)
-                      (\idx -> pure . VStruct . (ix idx % _1 .~ k1') $ kvs)
-              )
-        _ -> abort
+rename range vs
+  | [s@(VStruct kvs), k, k1] <- vs,
+    Right (k', k1') <- tryInto @Name `traverseBoth` (k, k1) = case k' `structFindIndex` kvs of
+      Just idx -> pure . VStruct . (ix idx % _1 .~ k1') $ kvs
+      Nothing -> throwReport [i|no entry found for key `#{k}` in `#{s}`|] []
+  | otherwise = unexpectedArgs range "(struct, name, name)" vs
 
 update :: RawHostFun
-update range vs =
-  let abort = unexpectedArgs range "(struct, name, _)" vs
-      noEntry s idx = throwReport [i|no entry found for key `#{idx}` in `#{s}`|] []
-   in case vs of
-        [s@(VStruct kvs), k, v] ->
-          tryInto @Name k
-            & either
-              (const abort)
-              ( maybe
-                  (noEntry s k)
-                  (\idx -> pure . VStruct . (ix idx % _2 .~ v) $ kvs)
-                  . (`structFindIndex` kvs)
-              )
-        _ -> abort
+update range vs
+  | [s@(VStruct kvs), k, v] <- vs,
+    Right k' <- tryInto @Name k = case k' `structFindIndex` kvs of
+      Just idx -> pure . VStruct . (ix idx % _2 .~ v) $ kvs
+      Nothing -> throwReport [i|no entry found for key `#{k}` in `#{s}`|] []
+  | otherwise = unexpectedArgs range "(struct, name, _)" vs
