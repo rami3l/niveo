@@ -182,6 +182,15 @@ test_call =
         "let add_c = fun(a) {fun(b) {a + b}}; add_c(40)(2)" `assertEval` "42",
       testCase "with recursive definition" $
         "letrec fact = fun(a) {if (a <= 1) 1 else a * fact(a-1)}; fact(5)" `assertEval` "120",
+      testCase "with recursive definition, nested" $
+        [__i|
+          letrec fib = fun(i) {
+            letrec fib1 = fun(a, b, i) {if (i == 0) a else fib1(b, a+b, i-1)};
+            fib1(0, 1, i)
+          };
+          fib(10)
+        |]
+          `assertEval` "55",
       testCase "with mutual recursive definitions" $
         [__i|
           let n = 10;
