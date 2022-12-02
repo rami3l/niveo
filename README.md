@@ -10,7 +10,7 @@
 
 A minimalistic programmable configuration language.
 
-> This serves as a language design practice for BUAA's Programming Language Principle course.
+> This serves as a language design practice for BUAA's _Programming Language Principle_ course.
 
 ---
 
@@ -62,7 +62,7 @@ Without any flags from the `-f/-c` group, the Niveo REPL will be launched.
 
 ## Try it out!
 
-With the latest [Haskell toolchain](https://www.haskell.org/ghcup/install) installed (preferably with [`ghcup`](https://www.haskell.org/ghcup)), just execute:
+With the latest [Haskell toolchain](https://www.haskell.org/downloads) installed (preferably with [`ghcup`](https://www.haskell.org/ghcup)), just execute:
 
 ```sh
 # To launch the REPL:
