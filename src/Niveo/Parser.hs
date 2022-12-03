@@ -473,5 +473,5 @@ parse ::
 parse parser fin src =
   Megaparsec.parse parser fin src & mapLeft \bundle ->
     bundle
-      & errorDiagnosticFromBundle Nothing "Parse error on input" Nothing
+      & errorDiagnosticFromBundle Nothing "parse error on input" Nothing
       & \diag -> diag `addFile` fin $ toString src

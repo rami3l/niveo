@@ -10,7 +10,8 @@
 
 A minimalistic programmable configuration language.
 
-> This serves as a language design practice for BUAA's _Programming Language Principle_ course.
+> Niveo is still in very early stages and not ready for production.
+> It currently serves as a language design practice for BUAA's _Programming Language Principle_ course.
 
 ---
 
