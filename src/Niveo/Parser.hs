@@ -354,7 +354,7 @@ primary =
         <$> (kw TLetrec <|> kw TLet)
         <*> (((,) <$> ident <*> (op TEq *> expression)) `NonEmpty.sepEndBy1` comma)
         <*> (op TSemi *> expression),
-      EList <$> (op TLBrack *> (expression `sepEndBy` hidden (op TComma))) <*> op TRBrack,
+      EList <$> (op TLBrack *> (expression `sepEndBy` comma)) <*> op TRBrack,
       EStruct <$> kw TStruct <*> between (op TLBrace) (op TRBrace) (structKV `sepEndBy` comma),
       EIfElse
         <$> kw TIf
