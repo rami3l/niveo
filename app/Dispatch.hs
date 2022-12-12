@@ -43,17 +43,16 @@ import Witch
 import Prelude hiding (Reader, runReader)
 
 dispatch :: Args -> IO ()
-dispatch a = case a.mode of
+dispatch a = runHaskelineT defaultSettings case a.mode of
   ALoad fin -> runTxt . decodeUtf8 =<< readFileBS fin
   ACmd txt -> runTxt txt
   AREPL -> repl
   where
-    runTxt = runHaskelineT defaultSettings . evalStrInput
     repl =
       evalReplOpts $
         ReplOpts
           { banner = pure . \case SingleLine -> ">> "; MultiLine -> " | ",
-            command = evalStrInput,
+            command = runTxt,
             options = [],
             prefix = Just ':',
             multilineCommand = Just "paste",
@@ -62,8 +61,8 @@ dispatch a = case a.mode of
             finaliser = putStrLn "Leaving the Niveo REPL." $> Exit
           }
 
-    evalStrInput :: (MonadIO m, MonadCatch m) => String -> HaskelineT m ()
-    evalStrInput ln = runEff evalStrIO & liftIO >>= either printErr print'
+    runTxt :: (MonadIO m, MonadCatch m) => String -> HaskelineT m ()
+    runTxt ln = runEff evalStrIO & liftIO >>= either printErr print'
       where
         evalStrIO :: Eff '[IOE] (Either (Diagnostic Text) Val) =
           evalTxt
