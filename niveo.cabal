@@ -178,6 +178,7 @@ executable niveo-exe
     , optparse-applicative
     , parser-combinators
     , relude
+    , repline
     , scientific
     , string-interpolate
     , unliftio

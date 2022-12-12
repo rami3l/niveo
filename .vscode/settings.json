@@ -10,6 +10,7 @@
     "foldr",
     "Haskeline",
     "ifolded",
+    "initialiser",
     "mempty",
     "Niveo",
     "normalise",
