@@ -45,6 +45,7 @@ import Optics.Operators.Unsafe
 import Relude.Extra (toFst, traverseBoth)
 import System.FilePath (hasExtension, normalise, takeDirectory, (</>))
 import Witch
+import Witch.Encoding (UTF_8)
 import Prelude hiding (ask, asks, local, readFile)
 
 evalTxt :: EvalEs :>> es => Eff es Val
@@ -230,7 +231,7 @@ importJSON range [VStr fin] = do
   ctx <- ask @Context
   let invalidJSON = throwReport "invalid import" [(range, This [i|`#{fin}` doesn't seem to be a valid JSON file|])]
   src <- readFile . normalise $ takeDirectory ctx.fin </> into fin
-  Aeson.decode @Aeson.Value (into src) <&> into @Val & maybe invalidJSON pure
+  Aeson.decode @Aeson.Value (via @(UTF_8 LByteString) src) <&> into @Val & maybe invalidJSON pure
 importJSON range vs = unexpectedArgs range "(name)" vs
 
 toString_ :: RawHostFun
