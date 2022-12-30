@@ -28,32 +28,41 @@ import Options.Applicative
     short,
     strOption,
   )
-import System.Console.Haskeline
-  ( InputT,
-    defaultSettings,
-    getInputLine,
-    outputStrLn,
-    runInputT,
+import System.Console.Haskeline (defaultSettings)
+import System.Console.Repline
+  ( CompleterStyle (..),
+    ExitDecision (..),
+    HaskelineT,
+    MultiLine (..),
+    ReplOpts (..),
+    evalReplOpts,
+    runHaskelineT,
   )
 import UnliftIO (StringException (StringException), fromEither, stringException)
 import Witch
 import Prelude hiding (Reader, runReader)
 
 dispatch :: Args -> IO ()
-dispatch a = case a.mode of
+dispatch a = runHaskelineT defaultSettings case a.mode of
   ALoad fin -> runTxt . decodeUtf8 =<< readFileBS fin
   ACmd txt -> runTxt txt
   AREPL -> repl
   where
-    runInputT' = runInputT defaultSettings
-    runTxt = runInputT' . evalStrInput
+    repl =
+      evalReplOpts $
+        ReplOpts
+          { banner = pure . \case SingleLine -> ">> "; MultiLine -> " | ",
+            command = runTxt,
+            options = [],
+            prefix = Just ':',
+            multilineCommand = Just "paste",
+            tabComplete = File,
+            initialiser = putStrLn "Welcome to the Niveo REPL.",
+            finaliser = putStrLn "Leaving the Niveo REPL." $> Exit
+          }
 
-    repl = runInputT' $ fix \loop -> do
-      getInputLine ">> " >>= (`whenJust` evalStrInput)
-      loop
-
-    evalStrInput :: (MonadIO m, MonadCatch m) => String -> InputT m ()
-    evalStrInput ln = runEff evalStrIO & liftIO >>= either printErr print'
+    runTxt :: (MonadIO m, MonadCatch m) => String -> HaskelineT m ()
+    runTxt ln = runEff evalStrIO & liftIO >>= either printErr print'
       where
         evalStrIO :: Eff '[IOE] (Either (Diagnostic Text) Val) =
           evalTxt
@@ -65,9 +74,9 @@ dispatch a = case a.mode of
         ctx = Context {env = def, fin = "<stdin>", src = toText ln}
 
         print' v = do
-          when isREPL . outputStrLn $ "<< " <> show @String v
+          when isREPL . putStrLn $ "<< " <> show @String v
           case a.exportFmt of
-            Nothing -> unless isREPL . outputStrLn $ show @String v
+            Nothing -> unless isREPL . putStrLn $ show @String v
             Just JSON ->
               (intoAeson v >>= putLBSLn . AesonPretty.encodePretty)
                 `catch` \(StringException s _) -> do

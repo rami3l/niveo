@@ -115,6 +115,7 @@ executables:
       - niveo
       - haskeline
       - optparse-applicative
+      - repline
 
 tests:
   niveo-test:
