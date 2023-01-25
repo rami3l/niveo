@@ -45,7 +45,6 @@ import Optics.Operators.Unsafe
 import Relude.Extra (toFst, traverseBoth)
 import System.FilePath (hasExtension, normalise, takeDirectory, (</>))
 import Witch
-import Witch.Encoding (UTF_8)
 import Prelude hiding (ask, asks, local, readFile)
 
 evalTxt :: EvalEs :>> es => Eff es Val
