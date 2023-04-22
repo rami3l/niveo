@@ -40,9 +40,9 @@ jobs:
         with:
           path: |
             dist-newstyle
-          key: dist-${{ runner.os }}-${{ matrix.ghc }}-${{ github.sha }}
+          key: build-${{ runner.os }}-${{ matrix.ghc }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.ghc }}-
+            build-${{ runner.os }}-${{ matrix.ghc }}-
 
       - name: Test native build
         run: cabal build
